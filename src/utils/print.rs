@@ -51,15 +51,41 @@ pub fn metadata_to_table(meta: &JpegMetadata) -> Table {
     table
 }
 
-pub enum FieldSet<'a> {
+pub enum FieldSet {
     All,
-    Names(&'a [String]),
+    Names(Vec<String>),
+}
+
+/// Returns the list of available field keys and their human-friendly labels.
+/// Keys can be used with the `--fields` option.
+pub fn available_fields() -> Vec<(&'static str, &'static str)> {
+    vec![
+        ("camera_make", "Camera Make"),
+        ("camera_model", "Camera Model"),
+        ("gps.latitude", "Latitude"),
+        ("gps.longitude", "Longitude"),
+        ("gps.altitude", "Altitude (m)"),
+        ("f_number", "F-Number"),
+        ("iso", "ISO"),
+        ("exposure_time", "Exposure Time"),
+        ("focal_length_mm", "Focal Length (mm)"),
+        ("focal_length_35mm", "Focal Length (35mm)"),
+        ("lens_make", "Lens Make"),
+        ("lens_model", "Lens Model"),
+        ("date_time_original", "Date/Time Original"),
+        ("orientation", "Orientation"),
+        ("width", "Width (px)"),
+        ("height", "Height (px)"),
+        ("software", "Software"),
+    ]
 }
 
 pub fn filter_fields(meta: &JpegMetadata, fields: &FieldSet) -> Vec<(String, String)> {
     let mut rows: Vec<(String, String)> = Vec::new();
     let mut add = |name: &str, value: Option<String>| {
-        if let Some(v) = value { rows.push((name.to_string(), v)); }
+        if let Some(v) = value {
+            rows.push((name.to_string(), v));
+        }
     };
 
     add("camera_make", meta.camera_make.clone());
@@ -72,8 +98,14 @@ pub fn filter_fields(meta: &JpegMetadata, fields: &FieldSet) -> Vec<(String, Str
     add("f_number", meta.f_number.map(|v| format!("{v}")));
     add("iso", meta.iso.map(|v| v.to_string()));
     add("exposure_time", meta.exposure_time.clone());
-    add("focal_length_mm", meta.focal_length_mm.map(|v| format!("{v}")));
-    add("focal_length_35mm", meta.focal_length_35mm.map(|v| v.to_string()));
+    add(
+        "focal_length_mm",
+        meta.focal_length_mm.map(|v| format!("{v}")),
+    );
+    add(
+        "focal_length_35mm",
+        meta.focal_length_35mm.map(|v| v.to_string()),
+    );
     add("lens_make", meta.lens_make.clone());
     add("lens_model", meta.lens_model.clone());
     add("date_time_original", meta.date_time_original.clone());
@@ -86,13 +118,17 @@ pub fn filter_fields(meta: &JpegMetadata, fields: &FieldSet) -> Vec<(String, Str
         FieldSet::All => rows,
         FieldSet::Names(wanted) => {
             let set: std::collections::HashSet<&str> = wanted.iter().map(|s| s.as_str()).collect();
-            rows.into_iter().filter(|(k, _)| set.contains(k.as_str())).collect()
+            rows.into_iter()
+                .filter(|(k, _)| set.contains(k.as_str()))
+                .collect()
         }
     }
 }
 
 pub fn rows_to_csv(rows: &[(String, String)]) -> String {
-    let mut wtr = csv::WriterBuilder::new().has_headers(true).from_writer(vec![]);
+    let mut wtr = csv::WriterBuilder::new()
+        .has_headers(true)
+        .from_writer(vec![]);
     let _ = wtr.write_record(["field", "value"]);
     for (k, v) in rows {
         let _ = wtr.write_record([k, v]);
@@ -109,4 +145,34 @@ pub fn rows_to_markdown(rows: &[(String, String)]) -> String {
         let _ = writeln!(&mut s, "| {} | {} |", k, v.replace('|', "\\|"));
     }
     s
+}
+
+pub fn rows_to_tsv(rows: &[(String, String)]) -> String {
+    let mut s = String::new();
+    s.push_str("field\tvalue\n");
+    for (k, v) in rows {
+        let v = v.replace('\t', " ");
+        let _ = writeln!(&mut s, "{}\t{}", k, v);
+    }
+    s
+}
+
+// Plain text output is handled via comfy-table to_string for now.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rows_to_tsv_basic() {
+        let rows = vec![
+            ("camera_make".to_string(), "Canon".to_string()),
+            ("iso".to_string(), "400".to_string()),
+        ];
+        let tsv = rows_to_tsv(&rows);
+        let lines: Vec<&str> = tsv.trim_end().split('\n').collect();
+        assert_eq!(lines[0], "field\tvalue");
+        assert!(lines.iter().any(|l| *l == "camera_make\tCanon"));
+        assert!(lines.iter().any(|l| *l == "iso\t400"));
+    }
 }

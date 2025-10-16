@@ -2,11 +2,6 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use time::{OffsetDateTime, format_description::well_known::Rfc3339};
 
-pub enum SaveFormat {
-    Json,
-    Text,
-}
-
 pub fn unique_output_path(
     output_dir: &Path,
     input_path: &Path,

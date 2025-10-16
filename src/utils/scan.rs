@@ -1,8 +1,6 @@
-use std::io::Read;
-
 // Minimal JPEG segment scanner (SOI, APPn markers)
 // This can be expanded to detect other payloads (JFIF/EXIF/XMP) generically.
-pub fn list_jpeg_segments(mut bytes: &[u8]) -> Vec<String> {
+pub fn list_jpeg_segments(bytes: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
     if bytes.len() < 2 || bytes[0] != 0xFF || bytes[1] != 0xD8 {
         out.push("Not a JPEG (missing SOI)".to_string());
