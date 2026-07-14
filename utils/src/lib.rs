@@ -5,3 +5,4 @@ pub mod geo;
 pub mod path;
 pub mod validation;
 pub mod embedded;
+pub mod copy;
