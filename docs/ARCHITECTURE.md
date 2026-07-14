@@ -166,3 +166,34 @@ The HEIC parser (`src/heic.rs`) scans the ISOBMFF structure:
 2.  **Image Spatial Extents (`ispe`)**: Resolves dimensions.
 3.  **Item Location & Info (`iloc`, `iinf`)**: Matches the `Exif` item identifier, fetches its offset coordinates and lengths, and decodes the TIFF payload.
 
+---
+
+## 🔍 8. Embedded Payload & Overlay Scanning Flow
+
+To inspect files for hidden, appended, or malicious payloads (steganography / overlay), the `scan_embedded_payloads` utility inside [utils/src/embedded.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/embedded.rs) executes a post-parsing pipeline:
+
+```mermaid
+graph TD
+    Start([🚀 Start Scanner]) --> LoadBytes[Load File Bytes]
+    LoadBytes --> GetEOF[Fetch Parser's Scanned EOF Offset]
+    
+    subgraph OverlayCheck [Overlay Detection]
+        GetEOF --> CompareLen{File Size > Scanned EOF?}
+        CompareLen -- Yes --> CreateOverlay[Report Trailing Data Payload]
+        CompareLen -- No --> SigScan[Signature Walk]
+    end
+    
+    subgraph PatternWalk [Signature Magic Matching]
+        CreateOverlay --> SigScan
+        SigScan --> InitOffset[Start Search at Offset 12]
+        InitOffset --> WindowMatch{Match Magic Signature?}
+        WindowMatch -- ZIP/ELF/PE/PDF/PHP/Script --> CreatePayload[Report Hidden Payload]
+        WindowMatch -- None --> NextByte[Increment Scan Offset]
+        CreatePayload --> NextByte
+        NextByte --> Done{EndOfFile?}
+        Done -- No --> WindowMatch
+        Done -- Yes --> End([🏁 Done])
+    end
+```
+
+
