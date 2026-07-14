@@ -24,6 +24,27 @@ const PATTERNS: &[SignaturePattern] = &[
     SignaturePattern { magic: &[0xFF, 0xD8, 0xFF], name: "Embedded JPEG Image", category: "Image" },
 ];
 
+fn is_valid_payload(bytes: &[u8], offset: usize, name: &str) -> bool {
+    match name {
+        "Windows Portable Executable (PE)" => {
+            // MZ signature must have PE signature at offset specified by e_lfanew at 0x3C
+            if offset + 0x40 <= bytes.len() {
+                let pe_ptr = u32::from_le_bytes([
+                    bytes[offset + 0x3C],
+                    bytes[offset + 0x3D],
+                    bytes[offset + 0x3E],
+                    bytes[offset + 0x3F],
+                ]) as usize;
+                if offset + pe_ptr + 4 <= bytes.len() {
+                    return &bytes[offset + pe_ptr..offset + pe_ptr + 4] == b"PE\0\0";
+                }
+            }
+            false
+        }
+        _ => true,
+    }
+}
+
 /// Scans the binary payload of an image for trailing data (overlay) or embedded files with known signatures.
 pub fn scan_embedded_payloads(bytes: &[u8], official_end_offset: usize) -> Vec<EmbeddedPayload> {
     let mut payloads = Vec::new();
@@ -51,7 +72,7 @@ pub fn scan_embedded_payloads(bytes: &[u8], official_end_offset: usize) -> Vec<E
             while i + n <= scan_limit {
                 if &bytes[i..i+n] == pattern.magic {
                     // Make sure it doesn't overlap with trailing data
-                    if i < official_end_offset {
+                    if i < official_end_offset && is_valid_payload(bytes, i, pattern.name) {
                         let preview_len = std::cmp::min(16, scan_limit - i);
                         let preview_bytes = &bytes[i..i + preview_len];
                         payloads.push(EmbeddedPayload {
@@ -106,5 +127,21 @@ mod tests {
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].name, "ZIP Archive");
         assert_eq!(payloads[0].category, "Archive");
+    }
+
+    #[test]
+    fn test_scan_embedded_pe_signature() {
+        let mut bytes = b"GIF89a\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0".to_vec();
+        // Construct DOS header with e_lfanew pointer pointing to a valid PE signature
+        let mut dos_header = vec![0u8; 0x40];
+        dos_header[0..2].copy_from_slice(b"MZ");
+        dos_header[0x3C..0x40].copy_from_slice(&0x40u32.to_le_bytes()); // e_lfanew points to offset 0x40
+        dos_header.extend_from_slice(b"PE\0\0remaining_pe_header");
+
+        bytes.extend_from_slice(&dos_header);
+        
+        let payloads = scan_embedded_payloads(&bytes, bytes.len());
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0].name, "Windows Portable Executable (PE)");
     }
 }
