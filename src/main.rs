@@ -196,14 +196,7 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-fn matches_filter(field_name: &str, filter: &Option<Vec<String>>) -> bool {
-    if let Some(list) = filter {
-        let name_lower = field_name.to_lowercase().replace(' ', "_").replace("-", "_");
-        list.iter().any(|k| name_lower.contains(k))
-    } else {
-        true
-    }
-}
+use jpeg_meta_rs::utils::matches_filter;
 
 fn print_jpeg_tables(path: &Path, info: &JpegInfo, args: &Args, filter: &Option<Vec<String>>) {
     println!("File: {}", path.display());
@@ -374,8 +367,8 @@ fn print_png_tables(path: &Path, info: &PngInfo, args: &Args, filter: &Option<Ve
             add_prop("Pixels Per Unit X", Some(format!("{} / {}", res.ppu_x, unit_name)));
             add_prop("Pixels Per Unit Y", Some(format!("{} / {}", res.ppu_y, unit_name)));
             if res.unit_specifier == 1 {
-                let dpi_x = (res.ppu_x as f64 * 0.0254).round();
-                let dpi_y = (res.ppu_y as f64 * 0.0254).round();
+                let dpi_x = jpeg_meta_rs::utils::ppu_to_dpi(res.ppu_x);
+                let dpi_y = jpeg_meta_rs::utils::ppu_to_dpi(res.ppu_y);
                 add_prop("Calculated Resolution", Some(format!("{dpi_x}x{dpi_y} DPI")));
             }
         }

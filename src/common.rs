@@ -196,11 +196,21 @@ pub fn extract_exif_metadata(exif_data: &kamadak_exif::Exif) -> ExifMetadata {
                 && !lon_ref_val[0].is_empty()
             {
                 let mut gps = GpsInfo::default();
-                let lat_dec = lat_val[0].to_f64() + lat_val[1].to_f64() / 60.0 + lat_val[2].to_f64() / 3600.0;
-                let lon_dec = lon_val[0].to_f64() + lon_val[1].to_f64() / 60.0 + lon_val[2].to_f64() / 3600.0;
+                let lat_neg = lat_ref_val[0][0].eq_ignore_ascii_case(&b'S');
+                let lon_neg = lon_ref_val[0][0].eq_ignore_ascii_case(&b'W');
 
-                gps.latitude = Some(if lat_ref_val[0][0].eq_ignore_ascii_case(&b'S') { -lat_dec } else { lat_dec });
-                gps.longitude = Some(if lon_ref_val[0][0].eq_ignore_ascii_case(&b'W') { -lon_dec } else { lon_dec });
+                gps.latitude = Some(crate::utils::dms_to_decimal(
+                    lat_val[0].to_f64(),
+                    lat_val[1].to_f64(),
+                    lat_val[2].to_f64(),
+                    lat_neg,
+                ));
+                gps.longitude = Some(crate::utils::dms_to_decimal(
+                    lon_val[0].to_f64(),
+                    lon_val[1].to_f64(),
+                    lon_val[2].to_f64(),
+                    lon_neg,
+                ));
 
                 if let Some(alt_field) = alt_opt {
                     if let kamadak_exif::Value::Rational(alt_val) = &alt_field.value {

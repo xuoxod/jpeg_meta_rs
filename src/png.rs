@@ -80,22 +80,6 @@ pub struct PngInfo {
     pub metadata: ExifMetadata,
 }
 
-/// Helper function to compute IEEE CRC32 checksum.
-pub fn crc32(data: &[u8]) -> u32 {
-    let mut c = 0xFFFFFFFFu32;
-    for &b in data {
-        c ^= u32::from(b);
-        for _ in 0..8 {
-            if c & 1 != 0 {
-                c = (c >> 1) ^ 0xEDB88320;
-            } else {
-                c >>= 1;
-            }
-        }
-    }
-    !c
-}
-
 /// Parses raw PNG bytes to extract chunk lists, IHDR properties, text tags, timestamps, and EXIF metadata.
 pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
     let signature = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
@@ -141,7 +125,7 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
         let mut crc_check_data = Vec::with_capacity(4 + length);
         crc_check_data.extend_from_slice(&type_bytes);
         crc_check_data.extend_from_slice(payload);
-        let calculated_crc = crc32(&crc_check_data);
+        let calculated_crc = crate::utils::crc32(&crc_check_data);
         let crc_valid = calculated_crc == crc;
 
         chunks.push(PngChunk {
@@ -338,7 +322,7 @@ mod tests {
         let mut crc_check = Vec::new();
         crc_check.extend_from_slice(name);
         crc_check.extend_from_slice(data);
-        let crc = crc32(&crc_check);
+        let crc = crate::utils::crc32(&crc_check);
         out.extend_from_slice(&crc.to_be_bytes());
         out
     }
