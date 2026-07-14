@@ -4,9 +4,11 @@ This document details the modular layout, parsing flowcharts, and technical data
 
 ---
 
-## 🎨 1. Modular Core (Separation of Concerns)
+## 🎨 1. Modular Core (Separation of Concerns & Workspaces)
 
-`jpeg_meta_rs` splits the extraction pipeline into two **completely separate, distinct, and decoupled codebases** for JPEG and PNG formats. The binary CLI (`main.rs`) serves as the orchestrator to route inputs, compile dictionaries, and print/serialize outputs.
+The codebase is structured as a **Cargo Workspace** containing two distinct crates:
+1.  `jpeg_meta_rs` (Root Crate): Contains the binary CLI application and library parsers for JPEG and PNG formats.
+2.  `jpeg_meta_utils` (Sub-Crate): A dedicated library crate containing OJP validation engines, path/permission checkers, signature validation, custom errors, and math helpers.
 
 ```mermaid
 graph TD
@@ -14,7 +16,7 @@ graph TD
         Main[src/main.rs]
     end
 
-    subgraph Library [Modular Crate lib]
+    subgraph Library [jpeg_meta_rs lib]
         Main --> JpegEngine[src/jpeg.rs]
         Main --> PngEngine[src/png.rs]
         
@@ -25,10 +27,22 @@ graph TD
         PngEngine --> ExifCrate
     end
 
+    subgraph SubCrate [jpeg_meta_utils sub-crate]
+        Main --> PathVal[utils/src/path.rs]
+        Main --> FTVal[utils/src/file_type.rs]
+        Main --> ArgVal[utils/src/validation.rs]
+        Main --> ErrVal[utils/src/error.rs]
+        
+        PngEngine --> CrcVal[utils/src/crc.rs]
+        Common --> GeoVal[utils/src/geo.rs]
+    end
+
     classDef bin fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;
     classDef lib fill:#0f172a,stroke:#10b981,stroke-width:2px,color:#f8fafc;
+    classDef util fill:#312e81,stroke:#6366f1,stroke-width:2px,color:#f8fafc;
     class Main bin;
     class JpegEngine,PngEngine,Common,ExifCrate lib;
+    class PathVal,FTVal,ArgVal,ErrVal,CrcVal,GeoVal util;
 ```
 
 ---
