@@ -9,6 +9,9 @@ pub const JPEG_SIGNATURE: &[u8; 2] = &[0xFF, 0xD8];
 pub enum DetectedType {
     Jpeg,
     Png,
+    Webp,
+    Gif,
+    Heic,
 }
 
 /// Detects and validates the file type using magic bytes, falling back to file extension.
@@ -19,6 +22,18 @@ pub fn detect_file_type(bytes: &[u8], path: &Path) -> Result<DetectedType, Valid
     if bytes.len() >= 2 && &bytes[0..2] == JPEG_SIGNATURE {
         return Ok(DetectedType::Jpeg);
     }
+    if bytes.len() >= 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        return Ok(DetectedType::Webp);
+    }
+    if bytes.len() >= 6 && (&bytes[0..6] == b"GIF87a" || &bytes[0..6] == b"GIF89a") {
+        return Ok(DetectedType::Gif);
+    }
+    if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        let brand = &bytes[8..12];
+        if brand == b"heic" || brand == b"heix" || brand == b"hevc" || brand == b"mif1" || brand == b"msf1" {
+            return Ok(DetectedType::Heic);
+        }
+    }
 
     // Fallback to extension check
     let ext = path.extension()
@@ -28,9 +43,12 @@ pub fn detect_file_type(bytes: &[u8], path: &Path) -> Result<DetectedType, Valid
     match ext.as_deref() {
         Some("png") => Ok(DetectedType::Png),
         Some("jpg") | Some("jpeg") => Ok(DetectedType::Jpeg),
+        Some("webp") => Ok(DetectedType::Webp),
+        Some("gif") => Ok(DetectedType::Gif),
+        Some("heic") | Some("heif") => Ok(DetectedType::Heic),
         _ => Err(ValidationError::InvalidSignature {
             path: path.to_string_lossy().into_owned(),
-            expected: "JPEG or PNG magic bytes/extension".to_string(),
+            expected: "JPEG, PNG, WebP, GIF, or HEIC magic bytes/extension".to_string(),
         }),
     }
 }
@@ -47,10 +65,19 @@ mod tests {
         let jpeg_bytes = [0xFF, 0xD8, 0, 0];
         assert_eq!(detect_file_type(&jpeg_bytes, Path::new("test.jpg")).unwrap(), DetectedType::Jpeg);
 
-        let fallback_png = [0, 0, 0, 0];
-        assert_eq!(detect_file_type(&fallback_png, Path::new("test.png")).unwrap(), DetectedType::Png);
+        let webp_bytes = b"RIFF\0\0\0\0WEBPvp8x";
+        assert_eq!(detect_file_type(webp_bytes, Path::new("test.webp")).unwrap(), DetectedType::Webp);
 
-        let err = detect_file_type(&fallback_png, Path::new("test.txt")).unwrap_err();
+        let gif_bytes = b"GIF89a\0\0\0";
+        assert_eq!(detect_file_type(gif_bytes, Path::new("test.gif")).unwrap(), DetectedType::Gif);
+
+        let heic_bytes = b"\0\0\0\x18ftypheic\0\0\0\0";
+        assert_eq!(detect_file_type(heic_bytes, Path::new("test.heic")).unwrap(), DetectedType::Heic);
+
+        let fallback_webp = [0, 0, 0, 0];
+        assert_eq!(detect_file_type(&fallback_webp, Path::new("test.webp")).unwrap(), DetectedType::Webp);
+
+        let err = detect_file_type(&fallback_webp, Path::new("test.txt")).unwrap_err();
         assert!(matches!(err, ValidationError::InvalidSignature { .. }));
     }
 }

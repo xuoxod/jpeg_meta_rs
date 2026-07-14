@@ -3,6 +3,9 @@ use clap::{Parser, ValueEnum, ValueHint};
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use jpeg_meta_rs::jpeg::{parse_jpeg, JpegInfo};
 use jpeg_meta_rs::png::{parse_png, PngInfo};
+use jpeg_meta_rs::webp::{parse_webp, WebpInfo};
+use jpeg_meta_rs::gif::{parse_gif, GifInfo};
+use jpeg_meta_rs::heic::{parse_heic, HeicInfo};
 use jpeg_meta_rs::common::ExifMetadata;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -18,6 +21,9 @@ enum FileType {
     Auto,
     Jpeg,
     Png,
+    Webp,
+    Gif,
+    Heic,
 }
 
 #[derive(Parser, Debug)]
@@ -71,6 +77,9 @@ struct Args {
 enum FileAnalysis {
     Jpeg(JpegInfo),
     Png(PngInfo),
+    Webp(WebpInfo),
+    Gif(GifInfo),
+    Heic(HeicInfo),
 }
 
 fn main() -> Result<(), String> {
@@ -109,10 +118,16 @@ fn main() -> Result<(), String> {
         let resolved_type = match args.file_type {
             FileType::Jpeg => FileType::Jpeg,
             FileType::Png => FileType::Png,
+            FileType::Webp => FileType::Webp,
+            FileType::Gif => FileType::Gif,
+            FileType::Heic => FileType::Heic,
             FileType::Auto => {
                 match jpeg_meta_utils::file_type::detect_file_type(&bytes, path) {
                     Ok(jpeg_meta_utils::file_type::DetectedType::Jpeg) => FileType::Jpeg,
                     Ok(jpeg_meta_utils::file_type::DetectedType::Png) => FileType::Png,
+                    Ok(jpeg_meta_utils::file_type::DetectedType::Webp) => FileType::Webp,
+                    Ok(jpeg_meta_utils::file_type::DetectedType::Gif) => FileType::Gif,
+                    Ok(jpeg_meta_utils::file_type::DetectedType::Heic) => FileType::Heic,
                     Err(e) => {
                         errors.push(e.to_string());
                         continue;
@@ -142,6 +157,36 @@ fn main() -> Result<(), String> {
                     }
                 }
             }
+            FileType::Webp => {
+                match parse_webp(&bytes) {
+                    Ok(info) => {
+                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Webp(info));
+                    }
+                    Err(e) => {
+                        errors.push(format!("WebP parsing error on '{}': {e}", path.display()));
+                    }
+                }
+            }
+            FileType::Gif => {
+                match parse_gif(&bytes) {
+                    Ok(info) => {
+                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Gif(info));
+                    }
+                    Err(e) => {
+                        errors.push(format!("GIF parsing error on '{}': {e}", path.display()));
+                    }
+                }
+            }
+            FileType::Heic => {
+                match parse_heic(&bytes) {
+                    Ok(info) => {
+                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Heic(info));
+                    }
+                    Err(e) => {
+                        errors.push(format!("HEIC parsing error on '{}': {e}", path.display()));
+                    }
+                }
+            }
             FileType::Auto => unreachable!(),
         }
     }
@@ -167,6 +212,15 @@ fn main() -> Result<(), String> {
                 }
                 FileAnalysis::Png(info) => {
                     print_png_tables(path, info, &args, &filter_list);
+                }
+                FileAnalysis::Webp(info) => {
+                    print_webp_tables(path, info, &args, &filter_list);
+                }
+                FileAnalysis::Gif(info) => {
+                    print_gif_tables(path, info, &args, &filter_list);
+                }
+                FileAnalysis::Heic(info) => {
+                    print_heic_tables(path, info, &args, &filter_list);
                 }
             }
         }
@@ -532,5 +586,221 @@ fn print_exif_table(meta: &ExifMetadata, filter: &Option<Vec<String>>) {
         println!("📸 Decoded EXIF Metadata parameters:");
         println!("{table}");
         println!();
+    }
+}
+
+fn print_webp_tables(path: &Path, info: &WebpInfo, args: &Args, filter: &Option<Vec<String>>) {
+    println!("File: {}", path.display());
+    println!("Type: WebP Image Container");
+    println!();
+
+    // 1. Structure Chunks Table
+    if !args.exclude_structure {
+        let mut chunk_table = Table::new();
+        chunk_table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                Cell::new("Chunk Tag").fg(Color::Green).add_attribute(Attribute::Bold),
+                Cell::new("Offset").fg(Color::Green).add_attribute(Attribute::Bold),
+                Cell::new("Payload Length (Bytes)").fg(Color::Green).add_attribute(Attribute::Bold),
+            ]);
+
+        for chunk in &info.chunks {
+            chunk_table.add_row(vec![
+                chunk.tag.clone(),
+                format!("0x{:08X}", chunk.offset),
+                chunk.length.to_string(),
+            ]);
+        }
+        println!("📂 WebP Chunk Structure map:");
+        println!("{chunk_table}");
+        println!();
+    }
+
+    // 2. WebP Properties Table
+    if !args.exclude_properties {
+        let mut header_table = Table::new();
+        header_table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                Cell::new("Property").fg(Color::Blue).add_attribute(Attribute::Bold),
+                Cell::new("Value").fg(Color::Blue).add_attribute(Attribute::Bold),
+            ]);
+
+        let mut has_properties = false;
+        let mut add_prop = |name: &str, value: Option<String>| {
+            if let Some(v) = value {
+                if matches_filter(name, filter) {
+                    header_table.add_row(vec![name, &v]);
+                    has_properties = true;
+                }
+            }
+        };
+
+        add_prop("Width", info.width.map(|w| format!("{w} px")));
+        add_prop("Height", info.height.map(|h| format!("{h} px")));
+
+        if has_properties {
+            println!("ℹ️ Image properties:");
+            println!("{header_table}");
+            println!();
+        }
+    }
+
+    // 3. EXIF Tags Table
+    if !args.exclude_exif {
+        print_exif_table(&info.metadata, filter);
+    }
+
+    // 4. XMP Metadata Block
+    if !args.exclude_xmp {
+        if let Some(ref xmp) = info.metadata.xmp {
+            if matches_filter("xmp", filter) {
+                println!("📜 Embedded XMP Metadata Block:");
+                println!("{xmp}");
+                println!();
+            }
+        }
+    }
+}
+
+fn print_gif_tables(path: &Path, info: &GifInfo, args: &Args, filter: &Option<Vec<String>>) {
+    println!("File: {}", path.display());
+    println!("Type: Graphics Interchange Format (GIF)");
+    println!();
+
+    // 1. Structure Blocks Table
+    if !args.exclude_structure {
+        let mut block_table = Table::new();
+        block_table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                Cell::new("Block Type").fg(Color::Green).add_attribute(Attribute::Bold),
+                Cell::new("Offset").fg(Color::Green).add_attribute(Attribute::Bold),
+                Cell::new("Length (Bytes)").fg(Color::Green).add_attribute(Attribute::Bold),
+            ]);
+
+        for block in &info.blocks {
+            block_table.add_row(vec![
+                block.block_type.clone(),
+                format!("0x{:08X}", block.offset),
+                block.length.to_string(),
+            ]);
+        }
+        println!("📂 GIF Block Structure map:");
+        println!("{block_table}");
+        println!();
+    }
+
+    // 2. GIF Properties Table
+    if !args.exclude_properties {
+        let mut header_table = Table::new();
+        header_table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                Cell::new("Property").fg(Color::Blue).add_attribute(Attribute::Bold),
+                Cell::new("Value").fg(Color::Blue).add_attribute(Attribute::Bold),
+            ]);
+
+        let mut has_properties = false;
+        let mut add_prop = |name: &str, value: Option<String>| {
+            if let Some(v) = value {
+                if matches_filter(name, filter) {
+                    header_table.add_row(vec![name, &v]);
+                    has_properties = true;
+                }
+            }
+        };
+
+        add_prop("Width", Some(format!("{} px", info.width)));
+        add_prop("Height", Some(format!("{} px", info.height)));
+        add_prop("Comment Payload", info.comment.clone());
+
+        if has_properties {
+            println!("ℹ️ Image properties:");
+            println!("{header_table}");
+            println!();
+        }
+    }
+
+    // 3. XMP Metadata Block
+    if !args.exclude_xmp {
+        if let Some(ref xmp) = info.metadata.xmp {
+            if matches_filter("xmp", filter) {
+                println!("📜 Embedded XMP Metadata Block:");
+                println!("{xmp}");
+                println!();
+            }
+        }
+    }
+}
+
+fn print_heic_tables(path: &Path, info: &HeicInfo, args: &Args, filter: &Option<Vec<String>>) {
+    println!("File: {}", path.display());
+    println!("Type: High Efficiency Image Coding (HEIC)");
+    println!();
+
+    // 1. Structure Boxes Table
+    if !args.exclude_structure {
+        let mut box_table = Table::new();
+        box_table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                Cell::new("Box Type").fg(Color::Green).add_attribute(Attribute::Bold),
+                Cell::new("Offset").fg(Color::Green).add_attribute(Attribute::Bold),
+                Cell::new("Length (Bytes)").fg(Color::Green).add_attribute(Attribute::Bold),
+            ]);
+
+        for bbox in &info.boxes {
+            box_table.add_row(vec![
+                bbox.box_type.clone(),
+                format!("0x{:08X}", bbox.offset),
+                bbox.length.to_string(),
+            ]);
+        }
+        println!("📂 HEIC ISOBMFF Box Structure map:");
+        println!("{box_table}");
+        println!();
+    }
+
+    // 2. HEIC Properties Table
+    if !args.exclude_properties {
+        let mut header_table = Table::new();
+        header_table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                Cell::new("Property").fg(Color::Blue).add_attribute(Attribute::Bold),
+                Cell::new("Value").fg(Color::Blue).add_attribute(Attribute::Bold),
+            ]);
+
+        let mut has_properties = false;
+        let mut add_prop = |name: &str, value: Option<String>| {
+            if let Some(v) = value {
+                if matches_filter(name, filter) {
+                    header_table.add_row(vec![name, &v]);
+                    has_properties = true;
+                }
+            }
+        };
+
+        add_prop("Width", info.width.map(|w| format!("{w} px")));
+        add_prop("Height", info.height.map(|h| format!("{h} px")));
+
+        if has_properties {
+            println!("ℹ️ Image properties:");
+            println!("{header_table}");
+            println!();
+        }
+    }
+
+    // 3. EXIF Tags Table
+    if !args.exclude_exif {
+        print_exif_table(&info.metadata, filter);
     }
 }
