@@ -203,7 +203,8 @@ graph TD
 The copier engine inside [utils/src/copy.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/copy.rs) provides two OJP operations:
 1.  **Platform-Aware Pictures Directory Resolution**: Resolves the default pictures folder for Windows (`%USERPROFILE%/Pictures`), macOS (`$HOME/Pictures`), and Linux (`$HOME/Pictures`).
 2.  **File Copying & Directory Creation**: Safely copies images, creating nested parent folders on demand.
-3.  **Sanitization/De-embedding (Scrubbing)**: Creates a sanitized copy of an image by truncating all trailing data starting at the `official_end_offset`. This scrubs any binder executables, appended ZIPs, or overlay payloads, preserving the original logical image container exactly:
+3.  **Automatic Name Collision Resolution**: Checks if the target file already exists (or is being copied to the same folder as the original). If so, it automatically generates a non-colliding filename by appending `_copy_1`, `_copy_2`, etc. sequentially.
+4.  **Sanitization/De-embedding (Scrubbing)**: Creates a sanitized copy of an image by truncating all trailing data starting at the `official_end_offset`. This scrubs any binder executables, appended ZIPs, or overlay payloads, preserving the original logical image container exactly:
 
 ```mermaid
 graph TD
