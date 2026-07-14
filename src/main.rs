@@ -194,6 +194,13 @@ fn print_jpeg_tables(path: &Path, info: &JpegInfo, structure_only: bool) {
 
     // 3. EXIF Tags Table
     print_exif_table(&info.metadata);
+
+    // 4. XMP Metadata Block
+    if let Some(ref xmp) = info.metadata.xmp {
+        println!("📜 Embedded XMP Metadata Block:");
+        println!("{xmp}");
+        println!();
+    }
 }
 
 fn print_png_tables(path: &Path, info: &PngInfo, structure_only: bool) {
@@ -278,6 +285,33 @@ fn print_png_tables(path: &Path, info: &PngInfo, structure_only: bool) {
         }
         has_properties = true;
     }
+    if let Some(ref sbit) = info.significant_bits {
+        header_table.add_row(vec!["Significant Bits (sBIT)", &format!("{:?}", sbit.bits)]);
+        has_properties = true;
+    }
+    if let Some(ref bkgd) = info.background_color {
+        let desc = if let Some(p) = bkgd.palette_index {
+            format!("Palette Index {p}")
+        } else if let Some(g) = bkgd.gray {
+            format!("Grayscale {g}")
+        } else if let Some(rgb) = bkgd.rgb {
+            format!("RGB ({}, {}, {})", rgb.0, rgb.1, rgb.2)
+        } else {
+            "Unknown".to_string()
+        };
+        header_table.add_row(vec!["Background Color (bKGD)", &desc]);
+        has_properties = true;
+    }
+    if let Some(ref offs) = info.offset {
+        let unit = if offs.unit_specifier == 1 { "micrometers" } else { "pixels" };
+        header_table.add_row(vec!["Image Offset (oFFs)", &format!("X={}, Y={} {}", offs.offset_x, offs.offset_y, unit)]);
+        has_properties = true;
+    }
+    if let Some(ref scal) = info.physical_scale {
+        let unit = if scal.unit_specifier == 1 { "meters" } else { "radians" };
+        header_table.add_row(vec!["Physical Scale (sCAL)", &format!("X={} {}, Y={} {}", scal.scale_x, unit, scal.scale_y, unit)]);
+        has_properties = true;
+    }
 
     if has_properties {
         println!("ℹ️ Image properties:");
@@ -305,6 +339,13 @@ fn print_png_tables(path: &Path, info: &PngInfo, structure_only: bool) {
 
     // 4. EXIF Tags Table (if present in eXIf chunk)
     print_exif_table(&info.metadata);
+
+    // 5. XMP Metadata Block
+    if let Some(ref xmp) = info.metadata.xmp {
+        println!("📜 Embedded XMP Metadata Block:");
+        println!("{xmp}");
+        println!();
+    }
 }
 
 fn print_exif_table(meta: &ExifMetadata) {
@@ -331,6 +372,20 @@ fn print_exif_table(meta: &ExifMetadata) {
         add("GPS Latitude", gps.latitude.map(|v| format!("{v:.6}")));
         add("GPS Longitude", gps.longitude.map(|v| format!("{v:.6}")));
         add("GPS Altitude (m)", gps.altitude.map(|v| format!("{v}")));
+        add("GPS Speed", gps.speed.map(|v| {
+            let ref_str = gps.speed_ref.as_deref().unwrap_or("K");
+            format!("{v:.2} {ref_str}")
+        }));
+        add("GPS Track (Bearing)", gps.track.map(|v| {
+            let ref_str = gps.track_ref.as_deref().unwrap_or("T");
+            format!("{v:.2} deg {ref_str}")
+        }));
+        add("GPS Image Direction", gps.img_direction.map(|v| {
+            let ref_str = gps.img_direction_ref.as_deref().unwrap_or("T");
+            format!("{v:.2} deg {ref_str}")
+        }));
+        add("GPS Date Stamp", gps.date_stamp.clone());
+        add("GPS Time Stamp (UTC)", gps.time_stamp.clone());
     }
     add("F-Number", meta.f_number.map(|v| format!("f/{v}")));
     add("ISO", meta.iso.map(|v| v.to_string()));
@@ -344,6 +399,40 @@ fn print_exif_table(meta: &ExifMetadata) {
     add("Exif Image Width", meta.width.map(|v| v.to_string()));
     add("Exif Image Height", meta.height.map(|v| v.to_string()));
     add("Software", meta.software.clone());
+
+    // Advanced & Forensic tags
+    add("Body Serial Number", meta.body_serial_number.clone());
+    add("Lens Serial Number", meta.lens_serial_number.clone());
+    add("Flash State", meta.flash.map(|v| format!("0x{v:04X} ({v})")));
+    add("Exposure Program", meta.exposure_program.map(|v| match v {
+        1 => "Manual (1)".to_string(),
+        2 => "Normal Program (2)".to_string(),
+        3 => "Aperture Priority (3)".to_string(),
+        4 => "Shutter Priority (4)".to_string(),
+        other => format!("Other ({other})"),
+    }));
+    add("Metering Mode", meta.metering_mode.map(|v| match v {
+        1 => "Average (1)".to_string(),
+        2 => "Center-Weighted (2)".to_string(),
+        3 => "Spot (3)".to_string(),
+        4 => "Multi-Spot (4)".to_string(),
+        5 => "Pattern / Multi-Segment (5)".to_string(),
+        other => format!("Other ({other})"),
+    }));
+    add("White Balance", meta.white_balance.map(|v| match v {
+        0 => "Auto (0)".to_string(),
+        1 => "Manual (1)".to_string(),
+        other => format!("Other ({other})"),
+    }));
+    add("Light Source", meta.light_source.map(|v| match v {
+        0 => "Unknown (0)".to_string(),
+        1 => "Daylight (1)".to_string(),
+        2 => "Fluorescent (2)".to_string(),
+        3 => "Tungsten / Incandescent (3)".to_string(),
+        4 => "Flash (4)".to_string(),
+        other => format!("Other ({other})"),
+    }));
+    add("User Comment", meta.user_comment.clone());
 
     if has_exif {
         println!("📸 Decoded EXIF Metadata parameters:");

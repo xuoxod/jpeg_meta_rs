@@ -35,6 +35,36 @@ pub struct PngResolution {
     pub unit_specifier: u8, // 1 = meter, 0 = unknown
 }
 
+/// Significant bits from sBIT chunk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PngSignificantBits {
+    pub bits: Vec<u8>,
+}
+
+/// Background color from bKGD chunk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PngBackgroundColor {
+    pub gray: Option<u16>,
+    pub rgb: Option<(u16, u16, u16)>,
+    pub palette_index: Option<u8>,
+}
+
+/// Image offset from oFFs chunk.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct PngOffset {
+    pub offset_x: i32,
+    pub offset_y: i32,
+    pub unit_specifier: u8, // 0 = pixel, 1 = micrometer
+}
+
+/// Physical scale from sCAL chunk.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct PngPhysicalScale {
+    pub unit_specifier: u8, // 1 = meter, 2 = radian
+    pub scale_x: f64,
+    pub scale_y: f64,
+}
+
 /// Fully extracted structure and metadata of a PNG file.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct PngInfo {
@@ -43,6 +73,10 @@ pub struct PngInfo {
     pub text_metadata: Vec<(String, String)>,
     pub modification_time: Option<String>,
     pub resolution: Option<PngResolution>,
+    pub significant_bits: Option<PngSignificantBits>,
+    pub background_color: Option<PngBackgroundColor>,
+    pub offset: Option<PngOffset>,
+    pub physical_scale: Option<PngPhysicalScale>,
     pub metadata: ExifMetadata,
 }
 
@@ -74,7 +108,12 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
     let mut text_metadata = Vec::new();
     let mut modification_time = None;
     let mut resolution = None;
+    let mut significant_bits = None;
+    let mut background_color = None;
+    let mut offset = None;
+    let mut physical_scale = None;
     let mut raw_exif_payload: Option<Vec<u8>> = None;
+    let mut raw_xmp_payload: Option<String> = None;
 
     let mut pos = 8;
 
@@ -135,6 +174,9 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
                         std::str::from_utf8(&payload[idx + 1..]),
                     ) {
                         text_metadata.push((key.to_string(), val.to_string()));
+                        if key == "XML:com.adobe.xmp" {
+                            raw_xmp_payload = Some(val.trim().to_string());
+                        }
                     }
                 }
             }
@@ -144,22 +186,83 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
                         let remaining = &payload[idx + 1..];
                         if remaining.len() >= 2 {
                             let compression_flag = remaining[0];
-                            // We ignore compression_method (remaining[1])
                             let mut inner_pos = 2;
-                            // Find langTag string \0 terminated
                             if let Some(lang_len) = remaining[inner_pos..].iter().position(|&b| b == 0) {
                                 inner_pos += lang_len + 1;
-                                // Find translatedKeyword string \0 terminated
                                 if let Some(trans_len) = remaining[inner_pos..].iter().position(|&b| b == 0) {
                                     inner_pos += trans_len + 1;
-                                    // Text content (uncompressed UTF-8 supported)
                                     if compression_flag == 0 {
                                         if let Ok(val) = std::str::from_utf8(&remaining[inner_pos..]) {
                                             text_metadata.push((key.to_string(), val.to_string()));
+                                            if key == "XML:com.adobe.xmp" {
+                                                raw_xmp_payload = Some(val.trim().to_string());
+                                            }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+                }
+            }
+            "sBIT" => {
+                significant_bits = Some(PngSignificantBits {
+                    bits: payload.to_vec(),
+                });
+            }
+            "bKGD" => {
+                if payload.len() == 1 {
+                    background_color = Some(PngBackgroundColor {
+                        gray: None,
+                        rgb: None,
+                        palette_index: Some(payload[0]),
+                    });
+                } else if payload.len() == 2 {
+                    let gray = u16::from_be_bytes([payload[0], payload[1]]);
+                    background_color = Some(PngBackgroundColor {
+                        gray: Some(gray),
+                        rgb: None,
+                        palette_index: None,
+                    });
+                } else if payload.len() == 6 {
+                    let r = u16::from_be_bytes([payload[0], payload[1]]);
+                    let g = u16::from_be_bytes([payload[2], payload[3]]);
+                    let b = u16::from_be_bytes([payload[4], payload[5]]);
+                    background_color = Some(PngBackgroundColor {
+                        gray: None,
+                        rgb: Some((r, g, b)),
+                        palette_index: None,
+                    });
+                }
+            }
+            "oFFs" => {
+                if payload.len() >= 9 {
+                    let offset_x = i32::from_be_bytes([payload[0], payload[1], payload[2], payload[3]]);
+                    let offset_y = i32::from_be_bytes([payload[4], payload[5], payload[6], payload[7]]);
+                    let unit_specifier = payload[8];
+                    offset = Some(PngOffset {
+                        offset_x,
+                        offset_y,
+                        unit_specifier,
+                    });
+                }
+            }
+            "sCAL" => {
+                if payload.len() >= 3 {
+                    let unit_specifier = payload[0];
+                    let rest = &payload[1..];
+                    if let Some(idx) = rest.iter().position(|&b| b == 0) {
+                        if let (Ok(x_str), Ok(y_str)) = (
+                            std::str::from_utf8(&rest[0..idx]),
+                            std::str::from_utf8(&rest[idx + 1..]),
+                        ) {
+                            let scale_x = x_str.parse::<f64>().unwrap_or(0.0);
+                            let scale_y = y_str.parse::<f64>().unwrap_or(0.0);
+                            physical_scale = Some(PngPhysicalScale {
+                                unit_specifier,
+                                scale_x,
+                                scale_y,
+                            });
                         }
                     }
                 }
@@ -292,6 +395,25 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
                 };
             }
 
+            // Advanced & Forensic Tags
+            let get_short = |tag: kamadak_exif::Tag| -> Option<u16> {
+                exif_data.get_field(tag, kamadak_exif::In::PRIMARY)
+                    .and_then(|field| match &field.value {
+                        kamadak_exif::Value::Short(v) if !v.is_empty() => Some(v[0]),
+                        _ => None,
+                    })
+            };
+
+            metadata.body_serial_number = get_ascii_string(kamadak_exif::Tag::BodySerialNumber);
+            metadata.lens_serial_number = get_ascii_string(kamadak_exif::Tag::LensSerialNumber);
+            metadata.flash = get_short(kamadak_exif::Tag::Flash);
+            metadata.exposure_program = get_short(kamadak_exif::Tag::ExposureProgram);
+            metadata.metering_mode = get_short(kamadak_exif::Tag::MeteringMode);
+            metadata.white_balance = get_short(kamadak_exif::Tag::WhiteBalance);
+            metadata.light_source = get_short(kamadak_exif::Tag::LightSource);
+            metadata.user_comment = exif_data.get_field(kamadak_exif::Tag::UserComment, kamadak_exif::In::PRIMARY)
+                .map(|field| field.display_value().to_string());
+
             // GPS Parsing
             let lat_opt = exif_data.get_field(kamadak_exif::Tag::GPSLatitude, kamadak_exif::In::PRIMARY);
             let lat_ref_opt = exif_data.get_field(kamadak_exif::Tag::GPSLatitudeRef, kamadak_exif::In::PRIMARY);
@@ -341,6 +463,45 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
                                 }
                             }
                         }
+
+                        // Advanced GPS details
+                        let get_gps_ascii = |tag: kamadak_exif::Tag| -> Option<String> {
+                            exif_data.get_field(tag, kamadak_exif::In::PRIMARY)
+                                .and_then(|field| match &field.value {
+                                    kamadak_exif::Value::Ascii(v) if !v.is_empty() => {
+                                        std::str::from_utf8(&v[0]).ok().map(|s| s.trim().to_string())
+                                    }
+                                    _ => None,
+                                })
+                        };
+
+                        let get_gps_rational = |tag: kamadak_exif::Tag| -> Option<f64> {
+                            exif_data.get_field(tag, kamadak_exif::In::PRIMARY)
+                                .and_then(|field| match &field.value {
+                                    kamadak_exif::Value::Rational(v) if !v.is_empty() => Some(v[0].to_f64()),
+                                    _ => None,
+                                })
+                        };
+
+                        gps.speed = get_gps_rational(kamadak_exif::Tag::GPSSpeed);
+                        gps.speed_ref = get_gps_ascii(kamadak_exif::Tag::GPSSpeedRef);
+                        gps.track = get_gps_rational(kamadak_exif::Tag::GPSTrack);
+                        gps.track_ref = get_gps_ascii(kamadak_exif::Tag::GPSTrackRef);
+                        gps.img_direction = get_gps_rational(kamadak_exif::Tag::GPSImgDirection);
+                        gps.img_direction_ref = get_gps_ascii(kamadak_exif::Tag::GPSImgDirectionRef);
+                        gps.date_stamp = get_gps_ascii(kamadak_exif::Tag::GPSDateStamp);
+
+                        if let Some(field) = exif_data.get_field(kamadak_exif::Tag::GPSTimeStamp, kamadak_exif::In::PRIMARY) {
+                            if let kamadak_exif::Value::Rational(val) = &field.value {
+                                if val.len() >= 3 {
+                                    gps.time_stamp = Some(format!(
+                                        "{:02.0}:{:02.0}:{:02.0}",
+                                        val[0].to_f32(), val[1].to_f32(), val[2].to_f32()
+                                    ));
+                                }
+                            }
+                        }
+
                         metadata.gps = Some(gps);
                     }
                 }
@@ -348,12 +509,18 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
         }
     }
 
+    metadata.xmp = raw_xmp_payload;
+
     Ok(PngInfo {
         chunks,
         header,
         text_metadata,
         modification_time,
         resolution,
+        significant_bits,
+        background_color,
+        offset,
+        physical_scale,
         metadata,
     })
 }

@@ -38,6 +38,7 @@ pub fn parse_jpeg(bytes: &[u8]) -> Result<JpegInfo, ParseError> {
     let mut channels = None;
     let mut comment = None;
     let mut raw_exif_payload: Option<Vec<u8>> = None;
+    let mut raw_xmp_payload: Option<String> = None;
 
     let mut pos = 2;
 
@@ -113,10 +114,12 @@ pub fn parse_jpeg(bytes: &[u8]) -> Result<JpegInfo, ParseError> {
                     channels = Some(payload[5]);
                 }
             }
-            // APP1: extract EXIF payload if present
+            // APP1: extract EXIF or XMP payload if present
             0xE1 => {
                 if payload.len() >= 6 && &payload[0..6] == b"Exif\0\0" {
                     raw_exif_payload = Some(payload[6..].to_vec());
+                } else if payload.len() >= 29 && &payload[0..29] == b"http://ns.adobe.com/xap/1.0/\0" {
+                    raw_xmp_payload = Some(String::from_utf8_lossy(&payload[29..]).trim().to_string());
                 }
             }
             // COM: extract comment
@@ -227,6 +230,25 @@ pub fn parse_jpeg(bytes: &[u8]) -> Result<JpegInfo, ParseError> {
                 };
             }
 
+            // Advanced & Forensic Tags
+            let get_short = |tag: kamadak_exif::Tag| -> Option<u16> {
+                exif_data.get_field(tag, kamadak_exif::In::PRIMARY)
+                    .and_then(|field| match &field.value {
+                        kamadak_exif::Value::Short(v) if !v.is_empty() => Some(v[0]),
+                        _ => None,
+                    })
+            };
+
+            metadata.body_serial_number = get_ascii_string(kamadak_exif::Tag::BodySerialNumber);
+            metadata.lens_serial_number = get_ascii_string(kamadak_exif::Tag::LensSerialNumber);
+            metadata.flash = get_short(kamadak_exif::Tag::Flash);
+            metadata.exposure_program = get_short(kamadak_exif::Tag::ExposureProgram);
+            metadata.metering_mode = get_short(kamadak_exif::Tag::MeteringMode);
+            metadata.white_balance = get_short(kamadak_exif::Tag::WhiteBalance);
+            metadata.light_source = get_short(kamadak_exif::Tag::LightSource);
+            metadata.user_comment = exif_data.get_field(kamadak_exif::Tag::UserComment, kamadak_exif::In::PRIMARY)
+                .map(|field| field.display_value().to_string());
+
             // GPS Parsing
             let lat_opt = exif_data.get_field(kamadak_exif::Tag::GPSLatitude, kamadak_exif::In::PRIMARY);
             let lat_ref_opt = exif_data.get_field(kamadak_exif::Tag::GPSLatitudeRef, kamadak_exif::In::PRIMARY);
@@ -276,12 +298,53 @@ pub fn parse_jpeg(bytes: &[u8]) -> Result<JpegInfo, ParseError> {
                                 }
                             }
                         }
+
+                        // Advanced GPS details
+                        let get_gps_ascii = |tag: kamadak_exif::Tag| -> Option<String> {
+                            exif_data.get_field(tag, kamadak_exif::In::PRIMARY)
+                                .and_then(|field| match &field.value {
+                                    kamadak_exif::Value::Ascii(v) if !v.is_empty() => {
+                                        std::str::from_utf8(&v[0]).ok().map(|s| s.trim().to_string())
+                                    }
+                                    _ => None,
+                                })
+                        };
+
+                        let get_gps_rational = |tag: kamadak_exif::Tag| -> Option<f64> {
+                            exif_data.get_field(tag, kamadak_exif::In::PRIMARY)
+                                .and_then(|field| match &field.value {
+                                    kamadak_exif::Value::Rational(v) if !v.is_empty() => Some(v[0].to_f64()),
+                                    _ => None,
+                                })
+                        };
+
+                        gps.speed = get_gps_rational(kamadak_exif::Tag::GPSSpeed);
+                        gps.speed_ref = get_gps_ascii(kamadak_exif::Tag::GPSSpeedRef);
+                        gps.track = get_gps_rational(kamadak_exif::Tag::GPSTrack);
+                        gps.track_ref = get_gps_ascii(kamadak_exif::Tag::GPSTrackRef);
+                        gps.img_direction = get_gps_rational(kamadak_exif::Tag::GPSImgDirection);
+                        gps.img_direction_ref = get_gps_ascii(kamadak_exif::Tag::GPSImgDirectionRef);
+                        gps.date_stamp = get_gps_ascii(kamadak_exif::Tag::GPSDateStamp);
+
+                        if let Some(field) = exif_data.get_field(kamadak_exif::Tag::GPSTimeStamp, kamadak_exif::In::PRIMARY) {
+                            if let kamadak_exif::Value::Rational(val) = &field.value {
+                                if val.len() >= 3 {
+                                    gps.time_stamp = Some(format!(
+                                        "{:02.0}:{:02.0}:{:02.0}",
+                                        val[0].to_f32(), val[1].to_f32(), val[2].to_f32()
+                                    ));
+                                }
+                            }
+                        }
+
                         metadata.gps = Some(gps);
                     }
                 }
             }
         }
     }
+
+    metadata.xmp = raw_xmp_payload;
 
     Ok(JpegInfo {
         segments,
