@@ -1,60 +1,62 @@
 # 🛠️ Command-Line Interface Reference
 
-The `jpeg_meta_rs` CLI provides a unified interface to execute the JPEG and PNG parsers.
+The `jpeg_meta_rs` CLI provides a flexible, high-contrast, multi-file analyzer for JPEG and PNG images.
 
 ---
 
 ## 📡 1. Global Syntax
 
 ```bash
-cargo run -- [FLAGS] [OPTIONS] <FILE_PATH>
+cargo run -- [FLAGS] [OPTIONS] <FILES>...
 ```
 
 ### 📥 Arguments
-*   `<FILE_PATH>`: Path to a JPEG or PNG file.
+*   `<FILES>...`: One or more paths to JPEG/PNG files to analyze.
 
 ---
 
 ## ⚙️ 2. Option Matrix
 
-| Flag / Option | Description | Allowed Values / Formats |
-|---|---|---|
-| `-h, --help` | Display syntax help and examples. | N/A |
-| `-V, --version` | Display executable version. | N/A |
-| `-f, --format` | Set output presentation format (default: `table`). | `table`, `json` |
-| `-f, --file-type` | Force parser type instead of auto-detecting signature. | `auto`, `jpeg`, `png` |
-| `--structure-only` | Scan and output only the segment/chunk layout. | N/A |
+| Option / Flag | Short | Description | Allowed Values |
+|---|---|---|---|
+| `--format` | `-f` | Output presentation format. | `table`, `json` |
+| `--file-type` | `-t` | Force parsing file as a specific format. | `auto`, `jpeg`, `png` |
+| `--exclude-structure`| N/A | Hide the segment/chunk layout table. | N/A |
+| `--exclude-properties`| N/A | Hide basic image properties table. | N/A |
+| `--exclude-exif` | N/A | Hide EXIF metadata parameters. | N/A |
+| `--exclude-xmp` | N/A | Hide raw XMP XML metadata. | N/A |
+| `--exclude-text` | N/A | Hide PNG textual chunks (PNG only). | N/A |
+| `--filter-keys` | `-k` | Filter specific metadata fields to print. | Comma-separated list (e.g., `gps,iso,make`) |
 
 ---
 
 ## 🚀 3. Usage Scenarios
 
-### 📸 JPEG Metadata Extraction
-
-#### Display Standard Tables
-Extract segment structure, dimensions, and EXIF parameters from a JPEG:
+### 📸 Multi-File Scanning
+Analyze multiple files simultaneously. Each file output is separated by a bold border:
 ```bash
-cargo run -- test_images/img6-gps.jpg
+cargo run -- image1.jpg image2.png
 ```
 
-#### Output Structured JSON Records
-Serialize segment coordinates and EXIF tags to JSON:
+### 🔍 Metadata Scaling & Exclusion
+To scale back output and print only EXIF metadata without segment structure maps or raw XML blocks:
 ```bash
-cargo run -- --format json test_images/img6-gps.jpg
+cargo run -- --exclude-structure --exclude-properties --exclude-xmp image1.jpg
 ```
 
----
-
-### 🖼️ PNG Metadata Extraction
-
-#### Display Chunks and Text tags
-Extract chunks, header properties, resolution, text metadata, and embedded EXIF parameters:
+### 🎯 Smart Key Filtering
+Filter metadata fields using substring matching (case-insensitive). For example, to view only GPS coordinates and ISO values:
 ```bash
-cargo run -- sample.png
+cargo run -- --filter-keys gps,iso image1.jpg
 ```
+*Outputs:*
+*   `GPS Latitude`
+*   `GPS Longitude`
+*   `GPS Altitude`
+*   `ISO`
 
-#### Scan Chunks Layout Only
-Inspect chunk offsets, lengths, and CRC status:
+### 💾 Structured JSON Pipeline
+Outputs a single JSON dictionary mapping file paths to their extracted analysis:
 ```bash
-cargo run -- --structure-only sample.png
+cargo run -- --format json image1.jpg image2.png
 ```

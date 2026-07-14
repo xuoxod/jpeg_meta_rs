@@ -6,7 +6,7 @@ This document details the modular layout, parsing flowcharts, and technical data
 
 ## 🎨 1. Modular Core (Separation of Concerns)
 
-`jpeg_meta_rs` splits the extraction pipeline into two **completely separate, distinct, and decoupled codebases** for JPEG and PNG formats. The binary CLI (`main.rs`) serves as the orchestrator to route inputs and print/serialize outputs.
+`jpeg_meta_rs` splits the extraction pipeline into two **completely separate, distinct, and decoupled codebases** for JPEG and PNG formats. The binary CLI (`main.rs`) serves as the orchestrator to route inputs, compile dictionaries, and print/serialize outputs.
 
 ```mermaid
 graph TD
@@ -33,7 +33,24 @@ graph TD
 
 ---
 
-## 📸 2. JPEG Segment Scanning Flow
+## 🗺️ 2. Multi-File Dictionary Structures
+
+When multiple files are analyzed, `main.rs` builds a `BTreeMap<String, FileAnalysis>` mapping file paths to their polymorphic metadata records:
+
+```rust
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum FileAnalysis {
+    Jpeg(JpegInfo),
+    Png(PngInfo),
+}
+```
+
+This ensures that the final structured JSON output is returned as a single unified map, making it extremely easy to pipeline with downstream search utilities or databases.
+
+---
+
+## 📸 3. JPEG Segment Scanning Flow
 
 The JPEG engine (`src/jpeg.rs`) parses the JPEG binary layout sequentially. It loops through segments using marker offsets:
 
@@ -54,19 +71,23 @@ flowchart TD
     
     SaveSeg --> IsAPP1{Is APP1 EXIF?}
     IsAPP1 -- Yes --> ExtractExif[Extract Raw EXIF Bytes]
-    IsAPP1 -- No --> IsSOF{Is SOF0/SOF2?}
+    IsAPP1 -- No --> IsXMP{Is APP1 XMP?}
+    
+    IsXMP -- Yes --> ExtractXMP[Extract Raw XML String]
+    IsXMP -- No --> IsSOF{Is SOF0/SOF2?}
     
     IsSOF -- Yes --> ParseDim[Parse Width, Height & Precision]
     IsSOF -- No --> Skip[Skip Segment Payload]
     
     ExtractExif --> Skip
+    ExtractXMP --> Skip
     ParseDim --> Skip
     Skip --> FindMarker
 ```
 
 ---
 
-## 🖼️ 3. PNG Chunk Scanning Flow
+## 🖼️ 4. PNG Chunk Scanning Flow
 
 The PNG engine (`src/png.rs`) processes chunks according to the W3C PNG specification. Chunks consist of a 4-byte length, 4-byte ASCII type, payload, and a 4-byte CRC checksum:
 
@@ -83,10 +104,11 @@ flowchart TD
     VerifyCRC --> Route{Match Chunk Type}
     
     Route -- IHDR --> ParseIHDR[Parse Dimensions & Color Type]
-    Route -- tEXt/iTXt --> ParseText[Parse Key-Value Metadata]
+    Route -- tEXt/iTXt --> ParseText[Parse Key-Value Metadata & XMP]
     Route -- tIME --> ParseTime[Parse Modification Time]
     Route -- pHYs --> ParsePhys[Parse Pixel Aspect Resolution]
     Route -- eXIf --> ExtractExif[Extract Raw EXIF Bytes]
+    Route -- sBIT/bKGD/oFFs/sCAL --> ParseAncillary[Parse Chunk Specific Properties]
     Route -- Other --> Skip[Skip Payload]
     
     ParseIHDR --> Next[Read Next Chunk]
@@ -94,6 +116,7 @@ flowchart TD
     ParseTime --> Next
     ParsePhys --> Next
     ExtractExif --> Next
+    ParseAncillary --> Next
     Skip --> Next
     Next --> ReadChunk
 ```
