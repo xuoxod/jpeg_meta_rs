@@ -76,24 +76,24 @@ enum FileAnalysis {
 fn main() -> Result<(), String> {
     let args = Args::parse();
 
-    // Parse filter list
-    let filter_list: Option<Vec<String>> = args.filter_keys.as_ref().map(|s| {
-        s.split(',')
-            .map(|k| k.trim().to_lowercase())
-            .filter(|k| !k.is_empty())
-            .collect()
-    });
+    // Parse and validate filter list using validation utility
+    let filter_list: Option<Vec<String>> = match args.filter_keys.as_ref() {
+        Some(s) => match jpeg_meta_utils::validation::validate_filter_keys(s) {
+            Ok(list) => Some(list),
+            Err(e) => {
+                return Err(e.to_string());
+            }
+        },
+        None => None,
+    };
 
     let mut dictionary = std::collections::BTreeMap::new();
     let mut errors = Vec::new();
 
     for path in &args.file_paths {
-        if !path.exists() {
-            errors.push(format!("File not found: '{}'", path.display()));
-            continue;
-        }
-        if !path.is_file() {
-            errors.push(format!("Path is not a file: '{}'", path.display()));
+        // Validate file path and permissions using path utility
+        if let Err(e) = jpeg_meta_utils::path::validate_file_path(path) {
+            errors.push(e.to_string());
             continue;
         }
 
@@ -105,29 +105,17 @@ fn main() -> Result<(), String> {
             }
         };
 
-        if bytes.is_empty() {
-            errors.push(format!("File is empty: '{}'", path.display()));
-            continue;
-        }
-
-        // Determine file type
+        // Determine file type using file_type utility
         let resolved_type = match args.file_type {
             FileType::Jpeg => FileType::Jpeg,
             FileType::Png => FileType::Png,
             FileType::Auto => {
-                if bytes.len() >= 8 && bytes[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
-                    FileType::Png
-                } else if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 {
-                    FileType::Jpeg
-                } else {
-                    let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase());
-                    match ext.as_deref() {
-                        Some("png") => FileType::Png,
-                        Some("jpg") | Some("jpeg") => FileType::Jpeg,
-                        _ => {
-                            errors.push(format!("Could not auto-detect format for '{}'. Specify format with --file-type.", path.display()));
-                            continue;
-                        }
+                match jpeg_meta_utils::file_type::detect_file_type(&bytes, path) {
+                    Ok(jpeg_meta_utils::file_type::DetectedType::Jpeg) => FileType::Jpeg,
+                    Ok(jpeg_meta_utils::file_type::DetectedType::Png) => FileType::Png,
+                    Err(e) => {
+                        errors.push(e.to_string());
+                        continue;
                     }
                 }
             }
@@ -196,7 +184,7 @@ fn main() -> Result<(), String> {
     Ok(())
 }
 
-use jpeg_meta_rs::utils::matches_filter;
+use jpeg_meta_utils::validation::matches_filter;
 
 fn print_jpeg_tables(path: &Path, info: &JpegInfo, args: &Args, filter: &Option<Vec<String>>) {
     println!("File: {}", path.display());
@@ -367,8 +355,8 @@ fn print_png_tables(path: &Path, info: &PngInfo, args: &Args, filter: &Option<Ve
             add_prop("Pixels Per Unit X", Some(format!("{} / {}", res.ppu_x, unit_name)));
             add_prop("Pixels Per Unit Y", Some(format!("{} / {}", res.ppu_y, unit_name)));
             if res.unit_specifier == 1 {
-                let dpi_x = jpeg_meta_rs::utils::ppu_to_dpi(res.ppu_x);
-                let dpi_y = jpeg_meta_rs::utils::ppu_to_dpi(res.ppu_y);
+                let dpi_x = jpeg_meta_utils::geo::ppu_to_dpi(res.ppu_x);
+                let dpi_y = jpeg_meta_utils::geo::ppu_to_dpi(res.ppu_y);
                 add_prop("Calculated Resolution", Some(format!("{dpi_x}x{dpi_y} DPI")));
             }
         }

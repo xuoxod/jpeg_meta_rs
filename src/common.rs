@@ -199,13 +199,13 @@ pub fn extract_exif_metadata(exif_data: &kamadak_exif::Exif) -> ExifMetadata {
                 let lat_neg = lat_ref_val[0][0].eq_ignore_ascii_case(&b'S');
                 let lon_neg = lon_ref_val[0][0].eq_ignore_ascii_case(&b'W');
 
-                gps.latitude = Some(crate::utils::dms_to_decimal(
+                gps.latitude = Some(jpeg_meta_utils::geo::dms_to_decimal(
                     lat_val[0].to_f64(),
                     lat_val[1].to_f64(),
                     lat_val[2].to_f64(),
                     lat_neg,
                 ));
-                gps.longitude = Some(crate::utils::dms_to_decimal(
+                gps.longitude = Some(jpeg_meta_utils::geo::dms_to_decimal(
                     lon_val[0].to_f64(),
                     lon_val[1].to_f64(),
                     lon_val[2].to_f64(),

@@ -1,3 +1,9 @@
+[workspace]
+members = [
+    ".",
+    "utils",
+]
+
 [package]
 name = "jpeg_meta_rs"
 version = "0.1.0"
@@ -10,6 +16,7 @@ keywords = ["exif", "jpeg", "metadata", "cli"]
 categories = ["command-line-utilities", "multimedia::images"]
 
 [dependencies]
+jpeg_meta_utils = { path = "utils" }
 kamadak-exif = "0.5"
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

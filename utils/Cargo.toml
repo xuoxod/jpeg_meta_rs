@@ -1,0 +1,10 @@
+[package]
+name = "jpeg_meta_utils"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"

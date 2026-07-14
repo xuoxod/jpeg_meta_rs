@@ -125,7 +125,7 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
         let mut crc_check_data = Vec::with_capacity(4 + length);
         crc_check_data.extend_from_slice(&type_bytes);
         crc_check_data.extend_from_slice(payload);
-        let calculated_crc = crate::utils::crc32(&crc_check_data);
+        let calculated_crc = jpeg_meta_utils::crc::crc32(&crc_check_data);
         let crc_valid = calculated_crc == crc;
 
         chunks.push(PngChunk {
@@ -322,7 +322,7 @@ mod tests {
         let mut crc_check = Vec::new();
         crc_check.extend_from_slice(name);
         crc_check.extend_from_slice(data);
-        let crc = crate::utils::crc32(&crc_check);
+        let crc = jpeg_meta_utils::crc::crc32(&crc_check);
         out.extend_from_slice(&crc.to_be_bytes());
         out
     }
