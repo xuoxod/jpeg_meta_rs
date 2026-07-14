@@ -78,6 +78,7 @@ pub struct PngInfo {
     pub offset: Option<PngOffset>,
     pub physical_scale: Option<PngPhysicalScale>,
     pub metadata: ExifMetadata,
+    pub official_end_offset: usize,
 }
 
 /// Parses raw PNG bytes to extract chunk lists, IHDR properties, text tags, timestamps, and EXIF metadata.
@@ -284,6 +285,8 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
         }
     }
 
+    let official_end_offset = pos;
+
     let mut metadata = ExifMetadata::default();
     if let Some(exif_bytes) = raw_exif_payload {
         let reader = kamadak_exif::Reader::new();
@@ -305,6 +308,7 @@ pub fn parse_png(bytes: &[u8]) -> Result<PngInfo, ParseError> {
         offset,
         physical_scale,
         metadata,
+        official_end_offset,
     })
 }
 

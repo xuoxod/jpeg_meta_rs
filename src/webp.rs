@@ -17,6 +17,7 @@ pub struct WebpInfo {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub metadata: ExifMetadata,
+    pub official_end_offset: usize,
 }
 
 pub fn parse_webp(bytes: &[u8]) -> Result<WebpInfo, ParseError> {
@@ -106,11 +107,14 @@ pub fn parse_webp(bytes: &[u8]) -> Result<WebpInfo, ParseError> {
     }
     metadata.xmp = raw_xmp_payload;
 
+    let official_end_offset = riff_size + 8;
+
     Ok(WebpInfo {
         chunks,
         width,
         height,
         metadata,
+        official_end_offset,
     })
 }
 

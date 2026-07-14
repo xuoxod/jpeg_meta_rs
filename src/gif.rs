@@ -17,6 +17,7 @@ pub struct GifInfo {
     pub height: u16,
     pub comment: Option<String>,
     pub metadata: ExifMetadata,
+    pub official_end_offset: usize,
 }
 
 pub fn parse_gif(bytes: &[u8]) -> Result<GifInfo, ParseError> {
@@ -154,6 +155,8 @@ pub fn parse_gif(bytes: &[u8]) -> Result<GifInfo, ParseError> {
         }
     }
 
+    let official_end_offset = pos;
+
     let comment = if comments.is_empty() { None } else { Some(comments.join("; ")) };
     let mut metadata = ExifMetadata::default();
     metadata.xmp = raw_xmp_payload;
@@ -164,6 +167,7 @@ pub fn parse_gif(bytes: &[u8]) -> Result<GifInfo, ParseError> {
         height,
         comment,
         metadata,
+        official_end_offset,
     })
 }
 

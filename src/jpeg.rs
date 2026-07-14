@@ -23,6 +23,7 @@ pub struct JpegInfo {
     pub channels: Option<u8>,
     pub comment: Option<String>,
     pub metadata: ExifMetadata,
+    pub official_end_offset: usize,
 }
 
 /// Parses raw JPEG bytes to extract segment lists, dimensions, comments, and EXIF tags.
@@ -145,6 +146,11 @@ pub fn parse_jpeg(bytes: &[u8]) -> Result<JpegInfo, ParseError> {
 
     metadata.xmp = raw_xmp_payload;
 
+    let mut official_end_offset = bytes.len();
+    if let Some(eoi_pos) = bytes.windows(2).rposition(|w| w == [0xFF, 0xD9]) {
+        official_end_offset = eoi_pos + 2;
+    }
+
     Ok(JpegInfo {
         segments,
         width,
@@ -153,6 +159,7 @@ pub fn parse_jpeg(bytes: &[u8]) -> Result<JpegInfo, ParseError> {
         channels,
         comment,
         metadata,
+        official_end_offset,
     })
 }
 

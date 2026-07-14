@@ -70,6 +70,9 @@ struct Args {
     /// Filter specific metadata keys to display (comma-separated, matches substrings)
     #[arg(long, short = 'k', value_name = "KEYS")]
     filter_keys: Option<String>,
+    /// Exclude embedded/hidden payloads detection from print layout
+    #[arg(long)]
+    exclude_embedded: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -80,6 +83,13 @@ enum FileAnalysis {
     Webp(WebpInfo),
     Gif(GifInfo),
     Heic(HeicInfo),
+}
+
+#[derive(serde::Serialize)]
+struct AnalysisResult {
+    #[serde(flatten)]
+    analysis: FileAnalysis,
+    embedded: Vec<jpeg_meta_utils::embedded::EmbeddedPayload>,
 }
 
 fn main() -> Result<(), String> {
@@ -140,7 +150,12 @@ fn main() -> Result<(), String> {
             FileType::Jpeg => {
                 match parse_jpeg(&bytes) {
                     Ok(info) => {
-                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Jpeg(info));
+                        let eof = info.official_end_offset;
+                        let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
+                            analysis: FileAnalysis::Jpeg(info),
+                            embedded,
+                        });
                     }
                     Err(e) => {
                         errors.push(format!("JPEG parsing error on '{}': {e}", path.display()));
@@ -150,7 +165,12 @@ fn main() -> Result<(), String> {
             FileType::Png => {
                 match parse_png(&bytes) {
                     Ok(info) => {
-                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Png(info));
+                        let eof = info.official_end_offset;
+                        let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
+                            analysis: FileAnalysis::Png(info),
+                            embedded,
+                        });
                     }
                     Err(e) => {
                         errors.push(format!("PNG parsing error on '{}': {e}", path.display()));
@@ -160,7 +180,12 @@ fn main() -> Result<(), String> {
             FileType::Webp => {
                 match parse_webp(&bytes) {
                     Ok(info) => {
-                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Webp(info));
+                        let eof = info.official_end_offset;
+                        let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
+                            analysis: FileAnalysis::Webp(info),
+                            embedded,
+                        });
                     }
                     Err(e) => {
                         errors.push(format!("WebP parsing error on '{}': {e}", path.display()));
@@ -170,7 +195,12 @@ fn main() -> Result<(), String> {
             FileType::Gif => {
                 match parse_gif(&bytes) {
                     Ok(info) => {
-                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Gif(info));
+                        let eof = info.official_end_offset;
+                        let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
+                            analysis: FileAnalysis::Gif(info),
+                            embedded,
+                        });
                     }
                     Err(e) => {
                         errors.push(format!("GIF parsing error on '{}': {e}", path.display()));
@@ -180,7 +210,12 @@ fn main() -> Result<(), String> {
             FileType::Heic => {
                 match parse_heic(&bytes) {
                     Ok(info) => {
-                        dictionary.insert(path.to_string_lossy().to_string(), FileAnalysis::Heic(info));
+                        let eof = info.official_end_offset;
+                        let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
+                            analysis: FileAnalysis::Heic(info),
+                            embedded,
+                        });
                     }
                     Err(e) => {
                         errors.push(format!("HEIC parsing error on '{}': {e}", path.display()));
@@ -206,7 +241,7 @@ fn main() -> Result<(), String> {
                 println!();
             }
 
-            match analysis {
+            match &analysis.analysis {
                 FileAnalysis::Jpeg(info) => {
                     print_jpeg_tables(path, info, &args, &filter_list);
                 }
@@ -222,6 +257,11 @@ fn main() -> Result<(), String> {
                 FileAnalysis::Heic(info) => {
                     print_heic_tables(path, info, &args, &filter_list);
                 }
+            }
+
+            // Print embedded payloads table if not excluded
+            if !args.exclude_embedded {
+                print_embedded_table(&analysis.embedded, &filter_list);
             }
         }
     }
@@ -802,5 +842,48 @@ fn print_heic_tables(path: &Path, info: &HeicInfo, args: &Args, filter: &Option<
     // 3. EXIF Tags Table
     if !args.exclude_exif {
         print_exif_table(&info.metadata, filter);
+    }
+}
+
+fn print_embedded_table(payloads: &[jpeg_meta_utils::embedded::EmbeddedPayload], filter: &Option<Vec<String>>) {
+    if payloads.is_empty() {
+        return;
+    }
+
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Category").fg(Color::Red).add_attribute(Attribute::Bold),
+            Cell::new("Payload Name").fg(Color::Red).add_attribute(Attribute::Bold),
+            Cell::new("Offset").fg(Color::Red).add_attribute(Attribute::Bold),
+            Cell::new("Length").fg(Color::Red).add_attribute(Attribute::Bold),
+            Cell::new("First Bytes Preview").fg(Color::Red).add_attribute(Attribute::Bold),
+        ]);
+
+    let mut has_rows = false;
+    for payload in payloads {
+        if matches_filter(&payload.name, filter) || matches_filter(&payload.category, filter) {
+            let len_str = if payload.length > 0 {
+                payload.length.to_string()
+            } else {
+                "Unknown / Variable".to_string()
+            };
+            table.add_row(vec![
+                Cell::new(payload.category.clone()),
+                Cell::new(payload.name.clone()),
+                Cell::new(format!("0x{:08X}", payload.offset)),
+                Cell::new(len_str),
+                Cell::new(payload.preview.clone()),
+            ]);
+            has_rows = true;
+        }
+    }
+
+    if has_rows {
+        println!("⚠️ DETECTED EMBEDDED / HIDDEN PAYLOADS:");
+        println!("{table}");
+        println!();
     }
 }

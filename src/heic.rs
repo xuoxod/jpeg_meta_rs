@@ -17,6 +17,7 @@ pub struct HeicInfo {
     pub width: Option<u32>,
     pub height: Option<u32>,
     pub metadata: ExifMetadata,
+    pub official_end_offset: usize,
 }
 
 pub fn parse_heic(bytes: &[u8]) -> Result<HeicInfo, ParseError> {
@@ -298,11 +299,14 @@ pub fn parse_heic(bytes: &[u8]) -> Result<HeicInfo, ParseError> {
         }
     }
 
+    let official_end_offset = boxes.iter().map(|b| b.offset + b.length).max().unwrap_or(bytes.len());
+
     Ok(HeicInfo {
         boxes,
         width,
         height,
         metadata,
+        official_end_offset,
     })
 }
 
