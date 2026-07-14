@@ -1,271 +1,54 @@
 use clap::{Parser, ValueEnum, ValueHint};
-use jpeg_meta_rs::JpegMetadata;
-use serde_json;
-use std::path::PathBuf;
-mod utils;
+use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
+use jpeg_meta_rs::jpeg::{parse_jpeg, JpegInfo};
+use jpeg_meta_rs::png::{parse_png, PngInfo};
+use jpeg_meta_rs::common::ExifMetadata;
 use std::fs;
-use utils::{
-    catalog::{
-        entries_to_csv, entries_to_jsonl, entries_to_markdown, entries_to_paths, entries_to_tsv,
-        index_directory,
-    },
-    print::{
-        FieldSet, available_fields, filter_fields, metadata_to_table, rows_to_csv,
-        rows_to_markdown, rows_to_tsv,
-    },
-    save::{save_bytes, unique_output_path},
-    scan::list_jpeg_segments,
-};
+use std::path::{Path, PathBuf};
 
-// Use the library crate we are building
-use jpeg_meta_rs::parse_metadata; // Library function to parse EXIF metadata
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
 enum OutputFormat {
-    Debug,
-    Json,
     Table,
-    Csv,
-    Md,
-    Tsv,
-}
-
-#[derive(Copy, Clone, Debug, ValueEnum)]
-enum SaveFormat {
     Json,
-    Txt,
-    Csv,
-    Md,
-    Tsv,
 }
 
-/// Simple program to parse JPEG metadata
+#[derive(Copy, Clone, Debug, ValueEnum, PartialEq, Eq)]
+enum FileType {
+    Auto,
+    Jpeg,
+    Png,
+}
+
 #[derive(Parser, Debug)]
 #[command(
-    author,
+    name = "jpeg_meta_rs",
+    author = "Rick Walker <ichglauben@gmail.com>",
     version,
-    about = "Extract EXIF metadata from JPEGs with flexible output (table, JSON, CSV, Markdown, TSV).",
-    long_about = "A simple yet flexible CLI and library to parse common EXIF metadata from JPEG images.\n\nFeatures:\n- Table/JSON/CSV/Markdown/TSV outputs\n- Field filtering (e.g., --fields camera_make,iso)\n- Optional JPEG segment listing\n- Save outputs with unique filenames\n\nUse --list-fields to see all available field keys.",
-    after_help = "Examples:\n  # Default table output\n  jpeg_meta_rs image.jpg\n\n  # JSON output\n  jpeg_meta_rs --format json image.jpg\n\n  # CSV/Markdown/TSV with selected fields\n  jpeg_meta_rs --format csv --fields camera_make,iso image.jpg\n  jpeg_meta_rs --format md --fields all image.jpg\n  jpeg_meta_rs --format tsv --fields camera_make,camera_model,f_number image.jpg\n\n  # Save outputs (independent of display format)\n  jpeg_meta_rs --format table --save-format json --output-dir out image.jpg\n\n  # List available field keys\n  jpeg_meta_rs --list-fields\n\n  # Index a directory (flat) and print JSON catalog\n  jpeg_meta_rs --index-dir ./photos --format json\n\n  # Index recursively and export only paths\n  jpeg_meta_rs --index-dir ./photos --recursive --export-paths --output-dir out\n\n  # Index and export JSON Lines (one per line)\n  jpeg_meta_rs --index-dir ./photos --export-jsonl --output-dir out\n\n  # Index and display TSV, saving Markdown\n  jpeg_meta_rs --index-dir ./photos --format tsv --save-format md --output-dir out"
+    about = "Extract structure, headers, comments, text chunks, and EXIF metadata from JPEGs and PNGs.",
+    long_about = "A dual-format analyzer and metadata parser that handles JPEG and PNG files. Runs segment/chunk scans, extracts raw headers, parses text tags, and decodes full EXIF blocks."
 )]
 struct Args {
-    /// Path to the JPEG file to parse
-    #[arg(value_hint = ValueHint::FilePath, required_unless_present_any = ["list_fields", "index_dir"])]
-    file_path: Option<PathBuf>,
+    /// Path to the JPEG or PNG file to analyze
+    #[arg(value_hint = ValueHint::FilePath)]
+    file_path: PathBuf,
 
-    /// Output metadata as JSON (deprecated; use --format json)
-    #[arg(long, hide = true)]
-    json: bool,
-
-    /// Output format: json|table|debug (overridden by --json)
-    #[arg(long, value_enum, default_value_t = OutputFormat::Table)]
+    /// Output format
+    #[arg(long, short, value_enum, default_value_t = OutputFormat::Table)]
     format: OutputFormat,
 
-    /// Save output to file in this directory
+    /// Force parsing file as specific type instead of auto-detecting signature
+    #[arg(long, short, value_enum, default_value_t = FileType::Auto)]
+    file_type: FileType,
+
+    /// Only print the structural segments/chunks map and exit
     #[arg(long)]
-    output_dir: Option<PathBuf>,
-
-    /// Save format when saving to file
-    #[arg(long, value_enum, default_value_t = SaveFormat::Json)]
-    save_format: SaveFormat,
-
-    /// List JPEG segments (APP markers, SOS, EOI)
-    #[arg(long)]
-    segments: bool,
-
-    /// Fields to include: "all" or comma-separated keys (e.g., camera_make,iso)
-    #[arg(long, default_value = "all")]
-    fields: String,
-
-    /// List available field keys and exit
-    #[arg(long, action)]
-    list_fields: bool,
-    /// Build a catalog by indexing a directory of JPEGs; prints and/or saves the collection
-    #[arg(long, value_hint = ValueHint::DirPath, conflicts_with = "file_path")]
-    index_dir: Option<PathBuf>,
-
-    /// Recurse into subdirectories when indexing
-    #[arg(long, requires = "index_dir")]
-    recursive: bool,
-
-    /// When indexing, export only file paths (one per line) for external tools
-    #[arg(long, requires = "index_dir")]
-    export_paths: bool,
-
-    /// When indexing, export JSON Lines (one CatalogEntry per line)
-    #[arg(long, requires = "index_dir")]
-    export_jsonl: bool,
+    structure_only: bool,
 }
 
 fn main() -> Result<(), String> {
-    // Return a Result for easier error handling
     let args = Args::parse();
-    // If user asked to list available fields, do that and exit early
-    if args.list_fields {
-        let mut lines = Vec::new();
-        for (key, label) in available_fields() {
-            lines.push(format!("{key:22}  {label}"));
-        }
-        println!(
-            "Available fields (use with --fields):\n{}",
-            lines.join("\n")
-        );
-        return Ok(());
-    }
+    let path = args.file_path.as_path();
 
-    // If indexing a directory, produce a catalog output using chosen format and save_format
-    if let Some(dir) = args.index_dir.as_ref() {
-        let entries = index_directory(dir, args.recursive)?;
-        if args.export_paths {
-            let s = entries_to_paths(&entries);
-            println!("{}", s.trim_end());
-            if let Some(outdir) = args.output_dir.as_deref() {
-                let out = unique_output_path(outdir, dir.as_path(), "paths", "txt");
-                save_bytes(&out, s.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-                println!("Saved paths to {}", out.display());
-            }
-            return Ok(());
-        }
-        if args.export_jsonl {
-            let s = entries_to_jsonl(&entries).map_err(|e| format!("JSONL error: {}", e))?;
-            print!("{}", s);
-            if let Some(outdir) = args.output_dir.as_deref() {
-                let out = unique_output_path(outdir, dir.as_path(), "catalog", "jsonl");
-                save_bytes(&out, s.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-                println!("Saved catalog JSONL to {}", out.display());
-            }
-            return Ok(());
-        }
-        match args.format {
-            OutputFormat::Json => {
-                let json = serde_json::to_string_pretty(&entries)
-                    .map_err(|e| format!("Error serializing JSON: {}", e))?;
-                println!("{}", json);
-                if let Some(outdir) = args.output_dir.as_deref() {
-                    let out = unique_output_path(outdir, dir.as_path(), "catalog", "json");
-                    save_bytes(&out, json.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-                    println!("Saved catalog JSON to {}", out.display());
-                }
-            }
-            OutputFormat::Csv => {
-                let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                    FieldSet::All
-                } else {
-                    let names: Vec<String> = args
-                        .fields
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    FieldSet::Names(names)
-                };
-                let csv = entries_to_csv(&entries, &fields);
-                println!("{}", csv.trim_end());
-                if let Some(outdir) = args.output_dir.as_deref() {
-                    let out = unique_output_path(outdir, dir.as_path(), "catalog", "csv");
-                    save_bytes(&out, csv.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-                    println!("Saved catalog CSV to {}", out.display());
-                }
-            }
-            OutputFormat::Md => {
-                let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                    FieldSet::All
-                } else {
-                    let names: Vec<String> = args
-                        .fields
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    FieldSet::Names(names)
-                };
-                let md = entries_to_markdown(&entries, &fields);
-                println!("{}", md);
-                if let Some(outdir) = args.output_dir.as_deref() {
-                    let out = unique_output_path(outdir, dir.as_path(), "catalog", "md");
-                    save_bytes(&out, md.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-                    println!("Saved catalog Markdown to {}", out.display());
-                }
-            }
-            OutputFormat::Tsv => {
-                let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                    FieldSet::All
-                } else {
-                    let names: Vec<String> = args
-                        .fields
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect();
-                    FieldSet::Names(names)
-                };
-                let tsv = entries_to_tsv(&entries, &fields);
-                println!("{}", tsv.trim_end());
-                if let Some(outdir) = args.output_dir.as_deref() {
-                    let out = unique_output_path(outdir, dir.as_path(), "catalog", "tsv");
-                    save_bytes(&out, tsv.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-                    println!("Saved catalog TSV to {}", out.display());
-                }
-            }
-            OutputFormat::Table | OutputFormat::Debug => {
-                println!("Indexed {} JPEG(s) under {}", entries.len(), dir.display());
-                if let Some(outdir) = args.output_dir.as_deref() {
-                    match args.save_format {
-                        SaveFormat::Json => {
-                            let json = serde_json::to_string_pretty(&entries)
-                                .map_err(|e| format!("Error serializing JSON: {}", e))?;
-                            let out = unique_output_path(outdir, dir.as_path(), "catalog", "json");
-                            save_bytes(&out, json.as_bytes())
-                                .map_err(|e| format!("Save failed: {}", e))?;
-                            println!("Saved catalog JSON to {}", out.display());
-                        }
-                        SaveFormat::Csv => {
-                            let csv = entries_to_csv(&entries, &FieldSet::All);
-                            let out = unique_output_path(outdir, dir.as_path(), "catalog", "csv");
-                            save_bytes(&out, csv.as_bytes())
-                                .map_err(|e| format!("Save failed: {}", e))?;
-                            println!("Saved catalog CSV to {}", out.display());
-                        }
-                        SaveFormat::Md => {
-                            let md = entries_to_markdown(&entries, &FieldSet::All);
-                            let out = unique_output_path(outdir, dir.as_path(), "catalog", "md");
-                            save_bytes(&out, md.as_bytes())
-                                .map_err(|e| format!("Save failed: {}", e))?;
-                            println!("Saved catalog Markdown to {}", out.display());
-                        }
-                        SaveFormat::Txt => {
-                            let s = format!(
-                                "Indexed {} JPEG(s) under {}\n",
-                                entries.len(),
-                                dir.display()
-                            );
-                            let out = unique_output_path(outdir, dir.as_path(), "catalog", "txt");
-                            save_bytes(&out, s.as_bytes())
-                                .map_err(|e| format!("Save failed: {}", e))?;
-                            println!("Saved catalog summary to {}", out.display());
-                        }
-                        SaveFormat::Tsv => {
-                            let tsv = entries_to_tsv(&entries, &FieldSet::All);
-                            let out = unique_output_path(outdir, dir.as_path(), "catalog", "tsv");
-                            save_bytes(&out, tsv.as_bytes())
-                                .map_err(|e| format!("Save failed: {}", e))?;
-                            println!("Saved catalog TSV to {}", out.display());
-                        }
-                    }
-                }
-            }
-        }
-        return Ok(());
-    }
-
-    let Some(pathbuf) = args.file_path.as_ref() else {
-        return Err("Missing <file_path>; provide a file or use --list-fields".to_string());
-    };
-    let path = pathbuf.as_path();
-
-    // --- Validation Steps ---
-
-    // 1. Check Existence and if it's a file
     if !path.exists() {
         return Err(format!("Error: File not found at '{}'", path.display()));
     }
@@ -273,220 +56,298 @@ fn main() -> Result<(), String> {
         return Err(format!("Error: Path '{}' is not a file.", path.display()));
     }
 
-    // 2. Check Readability (Basic check - reading metadata might fail later anyway)
-    // std::fs::metadata gives us file metadata, including permissions, but checking
-    // exact read permission across OSes can be tricky. Often, just trying to read
-    // is the most reliable check. We'll rely on the file reading later to fail if needed.
-    println!("File exists and is a file: {}", path.display());
-
-    // 3. Check File Type (Simple extension check for now)
-    let extension = path
-        .extension()
-        .and_then(|ext| ext.to_str())
-        .map(|s| s.to_lowercase());
-
-    match extension.as_deref() {
-        Some("jpg") | Some("jpeg") => {
-            println!("File extension suggests JPEG.");
-        }
-        _ => {
-            // For now, we'll just warn, but could make this an error
-            // return Err(format!("Error: File '{}' does not have a .jpg or .jpeg extension.", file_path_str));
-            println!("Warning: File extension is not .jpg or .jpeg. Attempting to parse anyway.");
-        }
+    let bytes = fs::read(path).map_err(|e| format!("Error reading file: {e}"))?;
+    if bytes.is_empty() {
+        return Err("Error: File is empty".to_string());
     }
 
-    // --- Read File Content ---
-    // Read the whole file into memory. For very large files, streaming might be better.
-    let jpeg_data =
-        fs::read(path).map_err(|e| format!("Error reading file '{}': {}", path.display(), e))?;
-
-    // --- Call Parsing Logic (from lib.rs) ---
-    println!("Attempting to parse metadata...");
-    match parse_metadata(&jpeg_data) {
-        Ok(metadata) => {
-            let selected_format = if args.json {
-                OutputFormat::Json
+    // Determine file type
+    let resolved_type = match args.file_type {
+        FileType::Jpeg => FileType::Jpeg,
+        FileType::Png => FileType::Png,
+        FileType::Auto => {
+            if bytes.len() >= 8 && bytes[0..8] == [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] {
+                FileType::Png
+            } else if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8 {
+                FileType::Jpeg
             } else {
-                args.format
-            };
-            if matches!(selected_format, OutputFormat::Json) {
-                let json = serde_json::to_string_pretty(&metadata)
-                    .map_err(|e| format!("Error serializing JSON: {}", e))?;
-                println!("{}", json);
-                try_save(&args, path, &metadata, Some(&json))?;
-            } else {
-                match selected_format {
-                    OutputFormat::Table => {
-                        let table = metadata_to_table(&metadata);
-                        println!("{}", table);
-                        try_save(&args, path, &metadata, Some(&format!("{}\n", table)))?;
-                    }
-                    OutputFormat::Csv => {
-                        let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                            FieldSet::All
-                        } else {
-                            let names: Vec<String> = args
-                                .fields
-                                .split(',')
-                                .map(|s| s.trim().to_string())
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            FieldSet::Names(names)
-                        };
-                        let rows = filter_fields(&metadata, &fields);
-                        let csv = rows_to_csv(&rows);
-                        println!("{}", csv.trim_end());
-                        try_save(&args, path, &metadata, Some(&csv))?;
-                    }
-                    OutputFormat::Md => {
-                        let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                            FieldSet::All
-                        } else {
-                            let names: Vec<String> = args
-                                .fields
-                                .split(',')
-                                .map(|s| s.trim().to_string())
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            FieldSet::Names(names)
-                        };
-                        let rows = filter_fields(&metadata, &fields);
-                        let md = rows_to_markdown(&rows);
-                        println!("{}", md);
-                        try_save(&args, path, &metadata, Some(&md))?;
-                    }
-                    OutputFormat::Tsv => {
-                        let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                            FieldSet::All
-                        } else {
-                            let names: Vec<String> = args
-                                .fields
-                                .split(',')
-                                .map(|s| s.trim().to_string())
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            FieldSet::Names(names)
-                        };
-                        let rows = filter_fields(&metadata, &fields);
-                        let tsv = rows_to_tsv(&rows);
-                        println!("{}", tsv.trim_end());
-                        try_save(&args, path, &metadata, Some(&tsv))?;
-                    }
-                    OutputFormat::Debug => {
-                        println!("Successfully parsed metadata:");
-                        println!("{:#?}", metadata);
-                        try_save(&args, path, &metadata, Some(&format!("{:#?}\n", metadata)))?;
-                    }
-                    OutputFormat::Json => unreachable!(),
+                // Try extension check fallback
+                let ext = path.extension().and_then(|e| e.to_str()).map(|s| s.to_lowercase());
+                match ext.as_deref() {
+                    Some("png") => FileType::Png,
+                    Some("jpg") | Some("jpeg") => FileType::Jpeg,
+                    _ => return Err("Error: Could not auto-detect file signature. Use --file-type to specify explicitly.".to_string()),
                 }
             }
+        }
+    };
 
-            // Optional: list JPEG segments for insight
-            if args.segments {
-                let segments = list_jpeg_segments(&jpeg_data);
-                if !segments.is_empty() {
-                    println!("\nSegments:");
-                    for s in segments {
-                        println!("- {}", s);
-                    }
+    match resolved_type {
+        FileType::Jpeg => {
+            let info = parse_jpeg(&bytes).map_err(|e| format!("JPEG parsing error: {e}"))?;
+            match args.format {
+                OutputFormat::Json => {
+                    let json = serde_json::to_string_pretty(&info)
+                        .map_err(|e| format!("JSON serialization error: {e}"))?;
+                    println!("{json}");
+                }
+                OutputFormat::Table => {
+                    print_jpeg_tables(path, &info, args.structure_only);
                 }
             }
-            Ok(()) // Indicate success
         }
-        Err(e) => {
-            // Use the Debug representation of the ParseError enum
-            Err(format!("Error parsing metadata: {:?}", e))
+        FileType::Png => {
+            let info = parse_png(&bytes).map_err(|e| format!("PNG parsing error: {e}"))?;
+            match args.format {
+                OutputFormat::Json => {
+                    let json = serde_json::to_string_pretty(&info)
+                        .map_err(|e| format!("JSON serialization error: {e}"))?;
+                    println!("{json}");
+                }
+                OutputFormat::Table => {
+                    print_png_tables(path, &info, args.structure_only);
+                }
+            }
         }
+        FileType::Auto => unreachable!(),
     }
+
+    Ok(())
 }
 
-fn try_save(
-    args: &Args,
-    path: &std::path::Path,
-    metadata: &JpegMetadata,
-    rendered: Option<&str>,
-) -> Result<(), String> {
-    let Some(dir) = args.output_dir.as_deref() else {
-        return Ok(());
-    };
-    match args.save_format {
-        SaveFormat::Json => {
-            // Always save the full structured JSON regardless of display format
-            let json = serde_json::to_string_pretty(metadata)
-                .map_err(|e| format!("Error serializing JSON: {}", e))?;
-            let out = unique_output_path(dir, path, "exif", "json");
-            save_bytes(&out, json.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-            println!("Saved JSON to {}", out.display());
-        }
-        SaveFormat::Txt => {
-            // Save as plain text of selected rows (if provided), else table text
-            let content = if let Some(s) = rendered {
-                s.to_string()
-            } else {
-                let table = metadata_to_table(metadata).to_string();
-                format!("{}\n", table)
-            };
-            let out = unique_output_path(dir, path, "exif", "txt");
-            save_bytes(&out, content.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-            println!("Saved text to {}", out.display());
-        }
-        SaveFormat::Csv => {
-            // Save CSV of the selected fields
-            // Use --fields to decide selection
-            let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                FieldSet::All
-            } else {
-                let names: Vec<String> = args
-                    .fields
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                FieldSet::Names(names)
-            };
-            let rows = filter_fields(metadata, &fields);
-            let csv = rows_to_csv(&rows);
-            let out = unique_output_path(dir, path, "exif", "csv");
-            save_bytes(&out, csv.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-            println!("Saved CSV to {}", out.display());
-        }
-        SaveFormat::Md => {
-            let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                FieldSet::All
-            } else {
-                let names: Vec<String> = args
-                    .fields
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                FieldSet::Names(names)
-            };
-            let rows = filter_fields(metadata, &fields);
-            let md = rows_to_markdown(&rows);
-            let out = unique_output_path(dir, path, "exif", "md");
-            save_bytes(&out, md.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-            println!("Saved Markdown to {}", out.display());
-        }
-        SaveFormat::Tsv => {
-            let fields = if args.fields.trim().eq_ignore_ascii_case("all") {
-                FieldSet::All
-            } else {
-                let names: Vec<String> = args
-                    .fields
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                FieldSet::Names(names)
-            };
-            let rows = filter_fields(metadata, &fields);
-            let tsv = rows_to_tsv(&rows);
-            let out = unique_output_path(dir, path, "exif", "tsv");
-            save_bytes(&out, tsv.as_bytes()).map_err(|e| format!("Save failed: {}", e))?;
-            println!("Saved TSV to {}", out.display());
-        }
+fn print_jpeg_tables(path: &Path, info: &JpegInfo, structure_only: bool) {
+    println!("File: {}", path.display());
+    println!("Type: JPEG Image Container");
+    println!();
+
+    // 1. Structure Segment Table
+    let mut seg_table = Table::new();
+    seg_table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Marker Offset").fg(Color::Green).add_attribute(Attribute::Bold),
+            Cell::new("Marker Byte").fg(Color::Green).add_attribute(Attribute::Bold),
+            Cell::new("Segment Name").fg(Color::Green).add_attribute(Attribute::Bold),
+            Cell::new("Segment Length (Bytes)").fg(Color::Green).add_attribute(Attribute::Bold),
+        ]);
+
+    for seg in &info.segments {
+        seg_table.add_row(vec![
+            format!("0x{:08X}", seg.offset),
+            format!("0xFF{:02X}", seg.marker),
+            seg.name.clone(),
+            seg.length.to_string(),
+        ]);
     }
-    Ok(())
+    println!("📂 JPEG Segment Structure map:");
+    println!("{seg_table}");
+    println!();
+
+    if structure_only {
+        return;
+    }
+
+    // 2. JPEG Header Properties Table
+    let mut header_table = Table::new();
+    header_table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Property").fg(Color::Blue).add_attribute(Attribute::Bold),
+            Cell::new("Value").fg(Color::Blue).add_attribute(Attribute::Bold),
+        ]);
+
+    let mut has_properties = false;
+    if let Some(w) = info.width {
+        header_table.add_row(vec!["Width", &format!("{w} px")]);
+        has_properties = true;
+    }
+    if let Some(h) = info.height {
+        header_table.add_row(vec!["Height", &format!("{h} px")]);
+        has_properties = true;
+    }
+    if let Some(p) = info.precision {
+        header_table.add_row(vec!["Data Precision", &format!("{p} bits")]);
+        has_properties = true;
+    }
+    if let Some(c) = info.channels {
+        let name = match c {
+            1 => "Grayscale (1)".to_string(),
+            3 => "RGB / YCbCr (3)".to_string(),
+            4 => "CMYK (4)".to_string(),
+            other => format!("Custom ({other})"),
+        };
+        header_table.add_row(vec!["Color Channels", &name]);
+        has_properties = true;
+    }
+    if let Some(ref comment) = info.comment {
+        header_table.add_row(vec!["Comment Payload", comment]);
+        has_properties = true;
+    }
+
+    if has_properties {
+        println!("ℹ️ Image properties:");
+        println!("{header_table}");
+        println!();
+    }
+
+    // 3. EXIF Tags Table
+    print_exif_table(&info.metadata);
+}
+
+fn print_png_tables(path: &Path, info: &PngInfo, structure_only: bool) {
+    println!("File: {}", path.display());
+    println!("Type: Portable Network Graphics (PNG)");
+    println!();
+
+    // 1. Structure Chunks Table
+    let mut chunk_table = Table::new();
+    chunk_table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Offset").fg(Color::Green).add_attribute(Attribute::Bold),
+            Cell::new("Chunk Type").fg(Color::Green).add_attribute(Attribute::Bold),
+            Cell::new("Payload Length (Bytes)").fg(Color::Green).add_attribute(Attribute::Bold),
+            Cell::new("CRC Value").fg(Color::Green).add_attribute(Attribute::Bold),
+            Cell::new("CRC Status").fg(Color::Green).add_attribute(Attribute::Bold),
+        ]);
+
+    for chunk in &info.chunks {
+        let crc_status = if chunk.crc_valid {
+            Cell::new("Valid").fg(Color::Green)
+        } else {
+            Cell::new("CORRUPT").fg(Color::Red).add_attribute(Attribute::Bold)
+        };
+        chunk_table.add_row(vec![
+            Cell::new(format!("0x{:08X}", chunk.offset)),
+            Cell::new(chunk.type_name.clone()),
+            Cell::new((chunk.length - 12).to_string()),
+            Cell::new(format!("0x{:08X}", chunk.crc)),
+            crc_status,
+        ]);
+    }
+    println!("📂 PNG Chunk Structure map:");
+    println!("{chunk_table}");
+    println!();
+
+    if structure_only {
+        return;
+    }
+
+    // 2. PNG Header Properties Table
+    let mut header_table = Table::new();
+    header_table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("Property").fg(Color::Blue).add_attribute(Attribute::Bold),
+            Cell::new("Value").fg(Color::Blue).add_attribute(Attribute::Bold),
+        ]);
+
+    let mut has_properties = false;
+    if let Some(ref ihdr) = info.header {
+        header_table.add_row(vec!["Width", &format!("{} px", ihdr.width)]);
+        header_table.add_row(vec!["Height", &format!("{} px", ihdr.height)]);
+        header_table.add_row(vec!["Bit Depth", &format!("{} bits/channel", ihdr.bit_depth)]);
+        let color_name = match ihdr.color_type {
+            0 => "Grayscale (0)".to_string(),
+            2 => "Truecolor RGB (2)".to_string(),
+            3 => "Indexed Color (3)".to_string(),
+            4 => "Grayscale with Alpha (4)".to_string(),
+            6 => "Truecolor RGBA (6)".to_string(),
+            other => format!("Unknown ({other})"),
+        };
+        header_table.add_row(vec!["Color Type", &color_name]);
+        header_table.add_row(vec!["Interlace Method", if ihdr.interlace_method == 1 { "Adam7 Interlace" } else { "No Interlace" }]);
+        has_properties = true;
+    }
+    if let Some(ref t) = info.modification_time {
+        header_table.add_row(vec!["Last Mod Time (tIME)", t]);
+        has_properties = true;
+    }
+    if let Some(ref res) = info.resolution {
+        let unit_name = if res.unit_specifier == 1 { "Meters" } else { "Unknown Unit" };
+        header_table.add_row(vec!["Pixels Per Unit X", &format!("{} / {}", res.ppu_x, unit_name)]);
+        header_table.add_row(vec!["Pixels Per Unit Y", &format!("{} / {}", res.ppu_y, unit_name)]);
+        if res.unit_specifier == 1 {
+            let dpi_x = (res.ppu_x as f64 * 0.0254).round();
+            let dpi_y = (res.ppu_y as f64 * 0.0254).round();
+            header_table.add_row(vec!["Calculated Resolution", &format!("{dpi_x}x{dpi_y} DPI")]);
+        }
+        has_properties = true;
+    }
+
+    if has_properties {
+        println!("ℹ️ Image properties:");
+        println!("{header_table}");
+        println!();
+    }
+
+    // 3. PNG Text chunks Table
+    if !info.text_metadata.is_empty() {
+        let mut text_table = Table::new();
+        text_table
+            .load_preset(UTF8_FULL)
+            .set_content_arrangement(ContentArrangement::Dynamic)
+            .set_header(vec![
+                Cell::new("Text Keyword").fg(Color::Cyan).add_attribute(Attribute::Bold),
+                Cell::new("Text Value").fg(Color::Cyan).add_attribute(Attribute::Bold),
+            ]);
+        for (k, v) in &info.text_metadata {
+            text_table.add_row(vec![k, v]);
+        }
+        println!("🏷️ Embedded textual records:");
+        println!("{text_table}");
+        println!();
+    }
+
+    // 4. EXIF Tags Table (if present in eXIf chunk)
+    print_exif_table(&info.metadata);
+}
+
+fn print_exif_table(meta: &ExifMetadata) {
+    let mut table = Table::new();
+    table
+        .load_preset(UTF8_FULL)
+        .set_content_arrangement(ContentArrangement::Dynamic)
+        .set_header(vec![
+            Cell::new("EXIF Field").fg(Color::Magenta).add_attribute(Attribute::Bold),
+            Cell::new("Value").fg(Color::Magenta).add_attribute(Attribute::Bold),
+        ]);
+
+    let mut has_exif = false;
+    let mut add = |name: &str, value: Option<String>| {
+        if let Some(v) = value {
+            table.add_row(vec![Cell::new(name), Cell::new(v)]);
+            has_exif = true;
+        }
+    };
+
+    add("Camera Make", meta.camera_make.clone());
+    add("Camera Model", meta.camera_model.clone());
+    if let Some(ref gps) = meta.gps {
+        add("GPS Latitude", gps.latitude.map(|v| format!("{v:.6}")));
+        add("GPS Longitude", gps.longitude.map(|v| format!("{v:.6}")));
+        add("GPS Altitude (m)", gps.altitude.map(|v| format!("{v}")));
+    }
+    add("F-Number", meta.f_number.map(|v| format!("f/{v}")));
+    add("ISO", meta.iso.map(|v| v.to_string()));
+    add("Exposure Time", meta.exposure_time.clone());
+    add("Focal Length (mm)", meta.focal_length_mm.map(|v| format!("{v} mm")));
+    add("Focal Length (35mm)", meta.focal_length_35mm.map(|v| format!("{v} mm")));
+    add("Lens Make", meta.lens_make.clone());
+    add("Lens Model", meta.lens_model.clone());
+    add("Original Timestamp", meta.date_time_original.clone());
+    add("Orientation Offset", meta.orientation.map(|v| v.to_string()));
+    add("Exif Image Width", meta.width.map(|v| v.to_string()));
+    add("Exif Image Height", meta.height.map(|v| v.to_string()));
+    add("Software", meta.software.clone());
+
+    if has_exif {
+        println!("📸 Decoded EXIF Metadata parameters:");
+        println!("{table}");
+        println!();
+    }
 }
