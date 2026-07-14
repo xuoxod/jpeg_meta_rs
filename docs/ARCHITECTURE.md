@@ -134,3 +134,35 @@ flowchart TD
     Skip --> Next
     Next --> ReadChunk
 ```
+
+---
+
+## 🧭 5. WebP Chunk Scanning Flow
+
+The WebP parser (`src/webp.rs`) reads the RIFF container format. Sub-chunks are read sequentially:
+1.  **Header Check**: Validates `RIFF` and `WEBP` magic tags.
+2.  **Extended Headers (`VP8X`)**: Parses flags and gets canvas width/height (24-bit).
+3.  **Bitstream Chunks (`VP8 ` / `VP8L`)**: Parses frame headers (lossy) or bit streams (lossless) to resolve dimensions.
+4.  **Metadata Extraction**: Gathers `EXIF` (passed to decode engine) and `XMP ` chunks.
+
+---
+
+## 🎨 6. GIF Block Scanning Flow
+
+The GIF parser (`src/gif.rs`) scans blocks sequentially:
+1.  **Logical Screen Descriptor**: Resolves canvas width and height.
+2.  **Global Color Table**: Skips if present.
+3.  **ExtensionBlocks (`0x21`)**:
+    *   `Comment Extension` (`0xFE`): Concatenates sub-blocks as comments.
+    *   `Application Extension` (`0xFF`): Looks for `XMP Data` App Identifier and decodes.
+4.  **ImageDescriptor (`0x2C`)**: Skips local table and LZW frame sub-blocks.
+
+---
+
+## 🏗️ 7. HEIC Box Scanning Flow
+
+The HEIC parser (`src/heic.rs`) scans the ISOBMFF structure:
+1.  **Box Layout**: Loops through 4-byte box types.
+2.  **Image Spatial Extents (`ispe`)**: Resolves dimensions.
+3.  **Item Location & Info (`iloc`, `iinf`)**: Matches the `Exif` item identifier, fetches its offset coordinates and lengths, and decodes the TIFF payload.
+
