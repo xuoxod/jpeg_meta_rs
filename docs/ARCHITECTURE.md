@@ -196,4 +196,28 @@ graph TD
     end
 ```
 
+---
+
+## 💾 9. Cross-Platform File Copy & De-embedding (Scrubbing) Flow
+
+The copier engine inside [utils/src/copy.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/copy.rs) provides two OJP operations:
+1.  **Platform-Aware Pictures Directory Resolution**: Resolves the default pictures folder for Windows (`%USERPROFILE%/Pictures`), macOS (`$HOME/Pictures`), and Linux (`$HOME/Pictures`).
+2.  **File Copying & Directory Creation**: Safely copies images, creating nested parent folders on demand.
+3.  **Sanitization/De-embedding (Scrubbing)**: Creates a sanitized copy of an image by truncating all trailing data starting at the `official_end_offset`. This scrubs any binder executables, appended ZIPs, or overlay payloads, preserving the original logical image container exactly:
+
+```mermaid
+graph TD
+    Start([🚀 Start Scrubbing]) --> ReadFile[Read Source Bytes]
+    ReadFile --> GetOffset[Fetch official_end_offset]
+    GetOffset --> Compare{official_end_offset < Total Size?}
+    
+    Compare -- Yes --> Slice[Slice Bytes 0..official_end_offset]
+    Compare -- No --> KeepAll[Keep Original Bytes]
+    
+    Slice --> WriteFile[Write to Destination]
+    KeepAll --> WriteFile
+    WriteFile --> End([🏁 Sanitized Copy Created])
+```
+
+
 
