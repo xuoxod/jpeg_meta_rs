@@ -50,6 +50,7 @@ We structure our manuals following the Separation of Concerns (SOC) and Single S
 *   **🧬 [System Architecture & Design Manual](docs/ARCHITECTURE.md)**: Details the internal crate modules, parsing algorithms, sanitization workflows, and geo-conversions.
 *   **🛠️ [Command-Line Interface Reference](docs/CLI_REFERENCE.md)**: Command structures, arguments, formatting rules, and execution modes.
 *   **💻 [Developer & Contribution Guide](docs/DEVELOPER_GUIDE.md)**: Build instructions, test harness specifications (TDD), and dev setup.
+*   **📖 [End-User Operation Guide](docs/USER_GUIDE.md)**: Command parameters, real-world scenario outputs, and Shannon Entropy evaluation tables.
 
 ---
 
