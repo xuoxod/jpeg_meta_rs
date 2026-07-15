@@ -73,6 +73,10 @@ struct Args {
     /// Exclude embedded/hidden payloads detection from print layout
     #[arg(long)]
     exclude_embedded: bool,
+
+    /// Sanitize (strip all metadata/comments/ancillary chunks) and save image to target file
+    #[arg(long, value_name = "OUT_FILE")]
+    sanitize: Option<PathBuf>,
 }
 
 #[derive(serde::Serialize)]
@@ -89,6 +93,7 @@ enum FileAnalysis {
 struct AnalysisResult {
     #[serde(flatten)]
     analysis: FileAnalysis,
+    entropy: f64,
     embedded: Vec<jpeg_meta_utils::embedded::EmbeddedPayload>,
 }
 
@@ -145,15 +150,55 @@ fn main() -> Result<(), String> {
                 }
             }
         };
+        if let Some(ref out_path) = args.sanitize {
+            let sanitized_bytes = match resolved_type {
+                FileType::Jpeg => jpeg_meta_utils::sanitize::sanitize_jpeg_bytes(&bytes),
+                FileType::Png => jpeg_meta_utils::sanitize::sanitize_png_bytes(&bytes),
+                _ => {
+                    errors.push(format!(
+                        "Sanitization is only supported for JPEG and PNG formats. File '{}' is {:?}",
+                        path.display(),
+                        resolved_type
+                    ));
+                    continue;
+                }
+            };
 
+            match sanitized_bytes {
+                Ok(sb) => {
+                    let resolved_dest = jpeg_meta_utils::copy::resolve_destination_path(path, out_path);
+                    if let Some(parent) = resolved_dest.parent().filter(|p| !p.as_os_str().is_empty()) {
+                        if let Err(e) = fs::create_dir_all(parent) {
+                            errors.push(format!("Failed to create parent directory for '{}': {e}", resolved_dest.display()));
+                            continue;
+                        }
+                    }
+                    if let Err(e) = fs::write(&resolved_dest, sb) {
+                        errors.push(format!("Failed to write sanitized file to '{}': {e}", resolved_dest.display()));
+                    } else {
+                        println!(
+                            "Successfully sanitized '{}' and saved to '{}'.",
+                            path.display(),
+                            resolved_dest.display()
+                        );
+                    }
+                }
+                Err(e) => {
+                    errors.push(format!("Failed to sanitize '{}': {e}", path.display()));
+                }
+            }
+            continue;
+        }
         match resolved_type {
             FileType::Jpeg => {
                 match parse_jpeg(&bytes) {
                     Ok(info) => {
                         let eof = info.official_end_offset;
                         let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        let entropy = jpeg_meta_utils::entropy::calculate_shannon_entropy(&bytes);
                         dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
                             analysis: FileAnalysis::Jpeg(info),
+                            entropy,
                             embedded,
                         });
                     }
@@ -167,8 +212,10 @@ fn main() -> Result<(), String> {
                     Ok(info) => {
                         let eof = info.official_end_offset;
                         let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        let entropy = jpeg_meta_utils::entropy::calculate_shannon_entropy(&bytes);
                         dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
                             analysis: FileAnalysis::Png(info),
+                            entropy,
                             embedded,
                         });
                     }
@@ -182,8 +229,10 @@ fn main() -> Result<(), String> {
                     Ok(info) => {
                         let eof = info.official_end_offset;
                         let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        let entropy = jpeg_meta_utils::entropy::calculate_shannon_entropy(&bytes);
                         dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
                             analysis: FileAnalysis::Webp(info),
+                            entropy,
                             embedded,
                         });
                     }
@@ -197,8 +246,10 @@ fn main() -> Result<(), String> {
                     Ok(info) => {
                         let eof = info.official_end_offset;
                         let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        let entropy = jpeg_meta_utils::entropy::calculate_shannon_entropy(&bytes);
                         dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
                             analysis: FileAnalysis::Gif(info),
+                            entropy,
                             embedded,
                         });
                     }
@@ -212,8 +263,10 @@ fn main() -> Result<(), String> {
                     Ok(info) => {
                         let eof = info.official_end_offset;
                         let embedded = jpeg_meta_utils::embedded::scan_embedded_payloads(&bytes, eof);
+                        let entropy = jpeg_meta_utils::entropy::calculate_shannon_entropy(&bytes);
                         dictionary.insert(path.to_string_lossy().to_string(), AnalysisResult {
                             analysis: FileAnalysis::Heic(info),
+                            entropy,
                             embedded,
                         });
                     }
@@ -243,19 +296,19 @@ fn main() -> Result<(), String> {
 
             match &analysis.analysis {
                 FileAnalysis::Jpeg(info) => {
-                    print_jpeg_tables(path, info, &args, &filter_list);
+                    print_jpeg_tables(path, info, analysis.entropy, &args, &filter_list);
                 }
                 FileAnalysis::Png(info) => {
-                    print_png_tables(path, info, &args, &filter_list);
+                    print_png_tables(path, info, analysis.entropy, &args, &filter_list);
                 }
                 FileAnalysis::Webp(info) => {
-                    print_webp_tables(path, info, &args, &filter_list);
+                    print_webp_tables(path, info, analysis.entropy, &args, &filter_list);
                 }
                 FileAnalysis::Gif(info) => {
-                    print_gif_tables(path, info, &args, &filter_list);
+                    print_gif_tables(path, info, analysis.entropy, &args, &filter_list);
                 }
                 FileAnalysis::Heic(info) => {
-                    print_heic_tables(path, info, &args, &filter_list);
+                    print_heic_tables(path, info, analysis.entropy, &args, &filter_list);
                 }
             }
 
@@ -280,7 +333,7 @@ fn main() -> Result<(), String> {
 
 use jpeg_meta_utils::validation::matches_filter;
 
-fn print_jpeg_tables(path: &Path, info: &JpegInfo, args: &Args, filter: &Option<Vec<String>>) {
+fn print_jpeg_tables(path: &Path, info: &JpegInfo, entropy: f64, args: &Args, filter: &Option<Vec<String>>) {
     println!("File: {}", path.display());
     println!("Type: JPEG Image Container");
     println!();
@@ -342,6 +395,7 @@ fn print_jpeg_tables(path: &Path, info: &JpegInfo, args: &Args, filter: &Option<
             other => format!("Custom ({other})"),
         }));
         add_prop("Comment Payload", info.comment.clone());
+        add_prop("Shannon Entropy", Some(format!("{:.4} bits/byte", entropy)));
 
         if has_properties {
             println!("ℹ️ Image properties:");
@@ -367,7 +421,7 @@ fn print_jpeg_tables(path: &Path, info: &JpegInfo, args: &Args, filter: &Option<
     }
 }
 
-fn print_png_tables(path: &Path, info: &PngInfo, args: &Args, filter: &Option<Vec<String>>) {
+fn print_png_tables(path: &Path, info: &PngInfo, entropy: f64, args: &Args, filter: &Option<Vec<String>>) {
     println!("File: {}", path.display());
     println!("Type: Portable Network Graphics (PNG)");
     println!();
@@ -481,7 +535,7 @@ fn print_png_tables(path: &Path, info: &PngInfo, args: &Args, filter: &Option<Ve
             let unit = if scal.unit_specifier == 1 { "meters" } else { "radians" };
             add_prop("Physical Scale (sCAL)", Some(format!("X={} {}, Y={} {}", scal.scale_x, unit, scal.scale_y, unit)));
         }
-
+        add_prop("Shannon Entropy", Some(format!("{:.4} bits/byte", entropy)));
         if has_properties {
             println!("ℹ️ Image properties:");
             println!("{header_table}");
@@ -629,7 +683,7 @@ fn print_exif_table(meta: &ExifMetadata, filter: &Option<Vec<String>>) {
     }
 }
 
-fn print_webp_tables(path: &Path, info: &WebpInfo, args: &Args, filter: &Option<Vec<String>>) {
+fn print_webp_tables(path: &Path, info: &WebpInfo, entropy: f64, args: &Args, filter: &Option<Vec<String>>) {
     println!("File: {}", path.display());
     println!("Type: WebP Image Container");
     println!();
@@ -681,7 +735,7 @@ fn print_webp_tables(path: &Path, info: &WebpInfo, args: &Args, filter: &Option<
 
         add_prop("Width", info.width.map(|w| format!("{w} px")));
         add_prop("Height", info.height.map(|h| format!("{h} px")));
-
+        add_prop("Shannon Entropy", Some(format!("{:.4} bits/byte", entropy)));
         if has_properties {
             println!("ℹ️ Image properties:");
             println!("{header_table}");
@@ -706,7 +760,7 @@ fn print_webp_tables(path: &Path, info: &WebpInfo, args: &Args, filter: &Option<
     }
 }
 
-fn print_gif_tables(path: &Path, info: &GifInfo, args: &Args, filter: &Option<Vec<String>>) {
+fn print_gif_tables(path: &Path, info: &GifInfo, entropy: f64, args: &Args, filter: &Option<Vec<String>>) {
     println!("File: {}", path.display());
     println!("Type: Graphics Interchange Format (GIF)");
     println!();
@@ -759,6 +813,7 @@ fn print_gif_tables(path: &Path, info: &GifInfo, args: &Args, filter: &Option<Ve
         add_prop("Width", Some(format!("{} px", info.width)));
         add_prop("Height", Some(format!("{} px", info.height)));
         add_prop("Comment Payload", info.comment.clone());
+        add_prop("Shannon Entropy", Some(format!("{:.4} bits/byte", entropy)));
 
         if has_properties {
             println!("ℹ️ Image properties:");
@@ -779,7 +834,7 @@ fn print_gif_tables(path: &Path, info: &GifInfo, args: &Args, filter: &Option<Ve
     }
 }
 
-fn print_heic_tables(path: &Path, info: &HeicInfo, args: &Args, filter: &Option<Vec<String>>) {
+fn print_heic_tables(path: &Path, info: &HeicInfo, entropy: f64, args: &Args, filter: &Option<Vec<String>>) {
     println!("File: {}", path.display());
     println!("Type: High Efficiency Image Coding (HEIC)");
     println!();
@@ -831,7 +886,7 @@ fn print_heic_tables(path: &Path, info: &HeicInfo, args: &Args, filter: &Option<
 
         add_prop("Width", info.width.map(|w| format!("{w} px")));
         add_prop("Height", info.height.map(|h| format!("{h} px")));
-
+        add_prop("Shannon Entropy", Some(format!("{:.4} bits/byte", entropy)));
         if has_properties {
             println!("ℹ️ Image properties:");
             println!("{header_table}");
