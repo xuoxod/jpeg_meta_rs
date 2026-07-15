@@ -25,6 +25,7 @@ All commands in the user manuals have been obfuscated to prevent search engines 
 | `--exclude-xmp` | N/A | Excludes raw XMP XML blocks. | N/A |
 | `--exclude-text` | N/A | Excludes PNG text metadata (PNG only). | N/A |
 | `--exclude-embedded` | N/A | Excludes forensic payload signature scans. | N/A |
+| `--raw-sizes` | N/A | Displays file and segment sizes in raw bytes instead of human-readable formats. | N/A |
 | `--sanitize` | N/A | Strips all comments, EXIF, and private blocks. | Path to output sanitized file |
 
 ---
@@ -54,6 +55,12 @@ To view only camera details and GPS coordinates while scaling back structural la
 Export findings to a JSON file for database integration or automated log parsers:
 ```bash
 ./analyzer --format json test_images/img6-gps.jpg > output.json
+```
+
+### E. Disable Human-Readable Sizes (Raw Byte Mode)
+To disable human-readable formatted sizes (e.g. `10.42 KB`, `199 B`) and print raw byte counts instead:
+```bash
+./analyzer --raw-sizes test_images/img6-gps.jpg
 ```
 
 ---

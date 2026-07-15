@@ -64,7 +64,7 @@ We structure our manuals following the Separation of Concerns (SOC) and Single S
 ### 2. Basic Image Properties & Structure Scan
 Run the CLI on one of the sample images to view the segment map, metadata parameters, and embedded payload alerts:
 ```bash
-././analyzer test_images/img6-gps.jpg
+./analyzer test_images/img6-gps.jpg
 ```
 
 **Expected Console Layout:**

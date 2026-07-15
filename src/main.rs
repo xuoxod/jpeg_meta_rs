@@ -44,7 +44,7 @@ struct Args {
     format: OutputFormat,
 
     /// Force parsing file as specific type instead of auto-detecting signature
-    #[arg(long, short, value_enum, default_value_t = FileType::Auto)]
+    #[arg(long, short = 't', value_enum, default_value_t = FileType::Auto)]
     file_type: FileType,
 
     /// Exclude the structural segments/chunks table from print layout
@@ -997,5 +997,23 @@ fn print_trimmed_xmp(xmp: &str) {
     }
     if in_padding && padding_bytes > 0 {
         println!("    <!-- [... {} bytes of XMP padding spaces collapsed for readability ...] -->", padding_bytes);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn test_args_raw_sizes_default() {
+        let args = Args::try_parse_from(&["jpeg_meta_rs", "test_images/img6-gps.jpg"]).unwrap();
+        assert!(!args.raw_sizes);
+    }
+
+    #[test]
+    fn test_args_raw_sizes_provided() {
+        let args = Args::try_parse_from(&["jpeg_meta_rs", "--raw-sizes", "test_images/img6-gps.jpg"]).unwrap();
+        assert!(args.raw_sizes);
     }
 }

@@ -27,6 +27,8 @@ The `jpeg_meta_rs` CLI provides a flexible, high-contrast, multi-file analyzer f
 | `--exclude-xmp` | N/A | Hide raw XMP XML metadata. | N/A |
 | `--exclude-text` | N/A | Hide PNG textual chunks (PNG only). | N/A |
 | `--filter-keys` | `-k` | Filter specific metadata fields to print. | Comma-separated list (e.g., `gps,iso,make`) |
+| `--raw-sizes` | N/A | Display sizes in raw bytes instead of human-readable formats. | N/A |
+| `--exclude-embedded` | N/A | Hide the embedded payloads scanner table. | N/A |
 
 ---
 
