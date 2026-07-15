@@ -8,7 +8,7 @@ This document details the modular layout, parsing flowcharts, and technical data
 
 The codebase is structured as a **Cargo Workspace** containing two distinct crates:
 1.  `jpeg_meta_rs` (Root Crate): Contains the binary CLI application and library parsers for JPEG and PNG formats.
-2.  `jpeg_meta_utils` (Sub-Crate): A dedicated library crate containing OJP validation engines, path/permission checkers, signature validation, custom errors, and math helpers.
+2.  `jpeg_meta_utils` (Sub-Crate): A dedicated library crate containing OJP validation engines, path/permission checkers, OOM denial-of-service file size limits, signature validation, custom errors, and math helpers.
 
 ```mermaid
 graph TD
