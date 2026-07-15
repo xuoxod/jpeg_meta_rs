@@ -414,7 +414,7 @@ fn print_jpeg_tables(path: &Path, info: &JpegInfo, entropy: f64, args: &Args, fi
         if let Some(ref xmp) = info.metadata.xmp {
             if matches_filter("xmp", filter) {
                 println!("📜 Embedded XMP Metadata Block:");
-                println!("{xmp}");
+                print_trimmed_xmp(xmp);
                 println!();
             }
         }
@@ -579,7 +579,7 @@ fn print_png_tables(path: &Path, info: &PngInfo, entropy: f64, args: &Args, filt
         if let Some(ref xmp) = info.metadata.xmp {
             if matches_filter("xmp", filter) {
                 println!("📜 Embedded XMP Metadata Block:");
-                println!("{xmp}");
+                print_trimmed_xmp(xmp);
                 println!();
             }
         }
@@ -753,7 +753,7 @@ fn print_webp_tables(path: &Path, info: &WebpInfo, entropy: f64, args: &Args, fi
         if let Some(ref xmp) = info.metadata.xmp {
             if matches_filter("xmp", filter) {
                 println!("📜 Embedded XMP Metadata Block:");
-                println!("{xmp}");
+                print_trimmed_xmp(xmp);
                 println!();
             }
         }
@@ -827,7 +827,7 @@ fn print_gif_tables(path: &Path, info: &GifInfo, entropy: f64, args: &Args, filt
         if let Some(ref xmp) = info.metadata.xmp {
             if matches_filter("xmp", filter) {
                 println!("📜 Embedded XMP Metadata Block:");
-                println!("{xmp}");
+                print_trimmed_xmp(xmp);
                 println!();
             }
         }
@@ -940,5 +940,29 @@ fn print_embedded_table(payloads: &[jpeg_meta_utils::embedded::EmbeddedPayload],
         println!("⚠️ DETECTED EMBEDDED / HIDDEN PAYLOADS:");
         println!("{table}");
         println!();
+    }
+}
+
+fn print_trimmed_xmp(xmp: &str) {
+    let mut padding_bytes = 0;
+    let mut in_padding = false;
+
+    for line in xmp.lines() {
+        let is_padding_line = line.len() >= 80 && line.chars().all(|c| c.is_whitespace());
+        
+        if is_padding_line {
+            padding_bytes += line.len() + 1;
+            in_padding = true;
+        } else {
+            if in_padding {
+                println!("    <!-- [... {} bytes of XMP padding spaces collapsed for readability ...] -->", padding_bytes);
+                padding_bytes = 0;
+                in_padding = false;
+            }
+            println!("{line}");
+        }
+    }
+    if in_padding && padding_bytes > 0 {
+        println!("    <!-- [... {} bytes of XMP padding spaces collapsed for readability ...] -->", padding_bytes);
     }
 }
