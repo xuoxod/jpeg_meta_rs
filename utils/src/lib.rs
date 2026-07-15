@@ -9,3 +9,4 @@ pub mod copy;
 pub mod sanitize;
 pub mod entropy;
 pub mod size;
+pub mod edit;

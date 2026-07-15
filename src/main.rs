@@ -81,6 +81,22 @@ struct Args {
     /// Sanitize (strip all metadata/comments/ancillary chunks) and save image to target file
     #[arg(long, value_name = "OUT_FILE")]
     sanitize: Option<PathBuf>,
+
+    /// Set or update the image comment (JPEG COM segment or PNG 'Comment' text chunk)
+    #[arg(long, value_name = "COMMENT")]
+    set_comment: Option<String>,
+
+    /// Set or update a custom PNG text metadata key-value pair in format 'KEYWORD:VALUE'
+    #[arg(long, value_name = "KEY:VAL")]
+    set_text: Option<String>,
+
+    /// Delete a PNG text metadata keyword or the JPEG comment if keyword is 'Comment'
+    #[arg(long, value_name = "KEYWORD")]
+    delete_text: Option<String>,
+
+    /// Output file path for edited or sanitized image
+    #[arg(long, short = 'o', value_name = "OUT_FILE")]
+    out: Option<PathBuf>,
 }
 
 #[derive(serde::Serialize)]
@@ -154,6 +170,132 @@ fn main() -> Result<(), String> {
                 }
             }
         };
+        let mut modified_bytes = bytes.clone();
+        let mut has_edits = false;
+
+        if let Some(ref comment) = args.set_comment {
+            match resolved_type {
+                FileType::Jpeg => {
+                    match jpeg_meta_utils::edit::edit_jpeg_comment(&modified_bytes, Some(comment)) {
+                        Ok(mb) => {
+                            modified_bytes = mb;
+                            has_edits = true;
+                        }
+                        Err(e) => {
+                            errors.push(format!("Failed to edit JPEG comment for '{}': {e}", path.display()));
+                            continue;
+                        }
+                    }
+                }
+                FileType::Png => {
+                    match jpeg_meta_utils::edit::edit_png_text(&modified_bytes, "Comment", Some(comment)) {
+                        Ok(mb) => {
+                            modified_bytes = mb;
+                            has_edits = true;
+                        }
+                        Err(e) => {
+                            errors.push(format!("Failed to edit PNG comment for '{}': {e}", path.display()));
+                            continue;
+                        }
+                    }
+                }
+                _ => {
+                    errors.push(format!("Editing comments is only supported for JPEG and PNG formats. File '{}' is {:?}", path.display(), resolved_type));
+                    continue;
+                }
+            }
+        }
+
+        if let Some(ref pair) = args.set_text {
+            if let Some(pos) = pair.find(':') {
+                let (kw, val) = pair.split_at(pos);
+                let val = &val[1..]; // skip ':'
+                match resolved_type {
+                    FileType::Png => {
+                        match jpeg_meta_utils::edit::edit_png_text(&modified_bytes, kw, Some(val)) {
+                            Ok(mb) => {
+                                modified_bytes = mb;
+                                has_edits = true;
+                            }
+                            Err(e) => {
+                                errors.push(format!("Failed to edit PNG text for '{}': {e}", path.display()));
+                                continue;
+                            }
+                        }
+                    }
+                    _ => {
+                        errors.push(format!("Custom key-value text tags are only supported for PNG files. File '{}' is {:?}", path.display(), resolved_type));
+                        continue;
+                    }
+                }
+            } else {
+                errors.push("Invalid format for --set-text. Use KEYWORD:VALUE".to_string());
+                continue;
+            }
+        }
+
+        if let Some(ref kw) = args.delete_text {
+            match resolved_type {
+                FileType::Jpeg => {
+                    if kw.eq_ignore_ascii_case("Comment") {
+                        match jpeg_meta_utils::edit::edit_jpeg_comment(&modified_bytes, None) {
+                            Ok(mb) => {
+                                modified_bytes = mb;
+                                has_edits = true;
+                            }
+                            Err(e) => {
+                                errors.push(format!("Failed to delete JPEG comment for '{}': {e}", path.display()));
+                                continue;
+                            }
+                        }
+                    } else {
+                        errors.push("JPEG files only support deleting 'Comment' tag.".to_string());
+                        continue;
+                    }
+                }
+                FileType::Png => {
+                    match jpeg_meta_utils::edit::edit_png_text(&modified_bytes, kw, None) {
+                        Ok(mb) => {
+                            modified_bytes = mb;
+                            has_edits = true;
+                        }
+                        Err(e) => {
+                            errors.push(format!("Failed to delete PNG text for '{}': {e}", path.display()));
+                            continue;
+                        }
+                    }
+                }
+                _ => {
+                    errors.push(format!("Deleting metadata is only supported for JPEG and PNG formats. File '{}' is {:?}", path.display(), resolved_type));
+                    continue;
+                }
+            }
+        }
+
+        if has_edits {
+            if let Some(ref out_path) = args.out {
+                let resolved_dest = jpeg_meta_utils::copy::resolve_destination_path(path, out_path);
+                if let Some(parent) = resolved_dest.parent().filter(|p| !p.as_os_str().is_empty()) {
+                    if let Err(e) = fs::create_dir_all(parent) {
+                        errors.push(format!("Failed to create parent directory for '{}': {e}", resolved_dest.display()));
+                        continue;
+                    }
+                }
+                if let Err(e) = fs::write(&resolved_dest, &modified_bytes) {
+                    errors.push(format!("Failed to write edited file to '{}': {e}", resolved_dest.display()));
+                } else {
+                    println!(
+                        "Successfully edited '{}' and saved to '{}'.",
+                        path.display(),
+                        resolved_dest.display()
+                    );
+                }
+            } else {
+                errors.push("Writing edits requires specifying an output destination path via --out (-o).".to_string());
+            }
+            continue;
+        }
+
         if let Some(ref out_path) = args.sanitize {
             let sanitized_bytes = match resolved_type {
                 FileType::Jpeg => jpeg_meta_utils::sanitize::sanitize_jpeg_bytes(&bytes),
@@ -1007,13 +1149,29 @@ mod tests {
 
     #[test]
     fn test_args_raw_sizes_default() {
-        let args = Args::try_parse_from(&["jpeg_meta_rs", "test_images/img6-gps.jpg"]).unwrap();
+        let args = Args::try_parse_from(["jpeg_meta_rs", "test_images/img6-gps.jpg"]).unwrap();
         assert!(!args.raw_sizes);
     }
 
     #[test]
     fn test_args_raw_sizes_provided() {
-        let args = Args::try_parse_from(&["jpeg_meta_rs", "--raw-sizes", "test_images/img6-gps.jpg"]).unwrap();
+        let args = Args::try_parse_from(["jpeg_meta_rs", "--raw-sizes", "test_images/img6-gps.jpg"]).unwrap();
         assert!(args.raw_sizes);
+    }
+
+    #[test]
+    fn test_args_metadata_editing_provided() {
+        let args = Args::try_parse_from([
+            "jpeg_meta_rs",
+            "--set-comment", "Hello World",
+            "--set-text", "Author:Jane",
+            "--delete-text", "Copyright",
+            "-o", "out.jpg",
+            "test_images/img6-gps.jpg"
+        ]).unwrap();
+        assert_eq!(args.set_comment.as_deref(), Some("Hello World"));
+        assert_eq!(args.set_text.as_deref(), Some("Author:Jane"));
+        assert_eq!(args.delete_text.as_deref(), Some("Copyright"));
+        assert_eq!(args.out.as_ref().map(|p| p.to_str().unwrap()), Some("out.jpg"));
     }
 }

@@ -29,6 +29,10 @@ The `jpeg_meta_rs` CLI provides a flexible, high-contrast, multi-file analyzer f
 | `--filter-keys` | `-k` | Filter specific metadata fields to print. | Comma-separated list (e.g., `gps,iso,make`) |
 | `--raw-sizes` | N/A | Display sizes in raw bytes instead of human-readable formats. | N/A |
 | `--exclude-embedded` | N/A | Hide the embedded payloads scanner table. | N/A |
+| `--set-comment` | N/A | Set or update the image comment (JPEG COM segment or PNG 'Comment' text chunk). | String comment value |
+| `--set-text` | N/A | Set or update custom PNG text metadata key-value pair. | `KEYWORD:VALUE` |
+| `--delete-text` | N/A | Delete a PNG text metadata keyword or the JPEG comment. | Keyword to delete |
+| `--out` | `-o` | Output file path for edited or sanitized images. | Output file path |
 
 ---
 
@@ -62,3 +66,17 @@ Outputs a single JSON dictionary mapping file paths to their extracted analysis:
 ```bash
 ./analyzer --format json image1.jpg image2.png
 ```
+
+### ✏️ Metadata Editing & Creation
+Add, modify, or delete comments and text metadata keywords for JPEG and PNG:
+```bash
+# Set a comment for JPEG or PNG
+./analyzer --set-comment "Copyright 2026 Walkers" -o edited.jpg original.jpg
+
+# Set a custom keyword text tag in PNG
+./analyzer --set-text "Author:Rick Walker" -o edited.png original.png
+
+# Delete a metadata tag
+./analyzer --delete-text Author -o deleted.png edited.png
+```
+
