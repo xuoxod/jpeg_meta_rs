@@ -7,7 +7,7 @@ The `jpeg_meta_rs` CLI provides a flexible, high-contrast, multi-file analyzer f
 ## 📡 1. Global Syntax
 
 ```bash
-cargo run -- [FLAGS] [OPTIONS] <FILES>...
+./analyzer [FLAGS] [OPTIONS] <FILES>...
 ```
 
 ### 📥 Arguments
@@ -35,19 +35,19 @@ cargo run -- [FLAGS] [OPTIONS] <FILES>...
 ### 📸 Multi-File Scanning
 Analyze multiple files simultaneously. Each file output is separated by a bold border:
 ```bash
-cargo run -- image1.jpg image2.png
+./analyzer image1.jpg image2.png
 ```
 
 ### 🔍 Metadata Scaling & Exclusion
 To scale back output and print only EXIF metadata without segment structure maps or raw XML blocks:
 ```bash
-cargo run -- --exclude-structure --exclude-properties --exclude-xmp image1.jpg
+./analyzer --exclude-structure --exclude-properties --exclude-xmp image1.jpg
 ```
 
 ### 🎯 Smart Key Filtering
 Filter metadata fields using substring matching (case-insensitive). For example, to view only GPS coordinates and ISO values:
 ```bash
-cargo run -- --filter-keys gps,iso image1.jpg
+./analyzer --filter-keys gps,iso image1.jpg
 ```
 *Outputs:*
 *   `GPS Latitude`
@@ -58,5 +58,5 @@ cargo run -- --filter-keys gps,iso image1.jpg
 ### 💾 Structured JSON Pipeline
 Outputs a single JSON dictionary mapping file paths to their extracted analysis:
 ```bash
-cargo run -- --format json image1.jpg image2.png
+./analyzer --format json image1.jpg image2.png
 ```

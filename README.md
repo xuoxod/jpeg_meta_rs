@@ -1,6 +1,6 @@
 # 🖼️ `jpeg_meta_rs`
 
-An enterprise-grade, zero-dependency, ultra-fast Rust forensic engine and CLI suite designed to audit, scan, and sanitize binary image containers. It extracts structural segment/chunk layouts, parses EXIF/XMP metadata, calculates Shannon Entropy, detects hidden/embedded malicious payloads, and scrubs/sanitizes files.
+An enterprise-grade, zero-dependency, ultra-fast compiled systems language forensic engine and CLI suite designed to audit, scan, and sanitize binary image containers. It extracts structural segment/chunk layouts, parses EXIF/XMP metadata, calculates Shannon Entropy, detects hidden/embedded malicious payloads, and scrubs/sanitizes files.
 
 ```mermaid
 graph TD
@@ -57,13 +57,13 @@ We structure our manuals following the Separation of Concerns (SOC) and Single S
 
 ### 1. Compile & Build
 ```bash
-cargo build --release
+./build.sh
 ```
 
 ### 2. Basic Image Properties & Structure Scan
 Run the CLI on one of the sample images to view the segment map, metadata parameters, and embedded payload alerts:
 ```bash
-./target/release/jpeg_meta_rs test_images/img6-gps.jpg
+././analyzer test_images/img6-gps.jpg
 ```
 
 **Expected Console Layout:**
@@ -129,7 +129,7 @@ Type: JPEG Image Container
 ### 3. Sanitizing (Deep Cleaning) an Image
 To scrub all metadata, comments, and private color profile blocks from an image:
 ```bash
-./target/release/jpeg_meta_rs test_images/img6-gps.jpg --sanitize clean_image.jpg
+././analyzer test_images/img6-gps.jpg --sanitize clean_image.jpg
 ```
 Output:
 ```text
@@ -178,7 +178,7 @@ Successfully sanitized 'test_images/img6-gps.jpg' and saved to 'clean_image.jpg'
 ## 🔬 Test Suite (TDD)
 We enforce a test-driven development flow. Run the full test matrix locally:
 ```bash
-cargo test --all
+./test.sh --all
 ```
 Verify that all 41 test vectors pass successfully:
 ```text

@@ -51,7 +51,7 @@ graph TD
 
 When multiple files are analyzed, `main.rs` builds a `BTreeMap<String, FileAnalysis>` mapping file paths to their polymorphic metadata records:
 
-```rust
+```compiled systems language
 #[derive(Serialize)]
 #[serde(untagged)]
 pub enum FileAnalysis {
@@ -170,7 +170,7 @@ The HEIC parser (`src/heic.rs`) scans the ISOBMFF structure:
 
 ## 🔍 8. Embedded Payload & Overlay Scanning Flow
 
-To inspect files for hidden, appended, or malicious payloads (steganography / overlay), the `scan_embedded_payloads` utility inside [utils/src/embedded.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/embedded.rs) executes a post-parsing pipeline:
+To inspect files for hidden, appended, or malicious payloads (steganography / overlay), the `scan_embedded_payloads` utility inside [utils/src/embedded.rs](file:///home/emhcet/private/projects/desktop/compiled systems language/jpeg_meta_rs/utils/src/embedded.rs) executes a post-parsing pipeline:
 
 ```mermaid
 graph TD
@@ -200,7 +200,7 @@ graph TD
 
 ## 💾 9. Cross-Platform File Copy & De-embedding (Scrubbing) Flow
 
-The copier engine inside [utils/src/copy.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/copy.rs) provides two OJP operations:
+The copier engine inside [utils/src/copy.rs](file:///home/emhcet/private/projects/desktop/compiled systems language/jpeg_meta_rs/utils/src/copy.rs) provides two OJP operations:
 1.  **Platform-Aware Pictures Directory Resolution**: Resolves the default pictures folder for Windows (`%USERPROFILE%/Pictures`), macOS (`$HOME/Pictures`), and Linux (`$HOME/Pictures`).
 2.  **File Copying & Directory Creation**: Safely copies images, creating nested parent folders on demand.
 3.  **Automatic Name Collision Resolution**: Checks if the target file already exists (or is being copied to the same folder as the original). If so, it automatically generates a non-colliding filename by appending `_copy_1`, `_copy_2`, etc. sequentially.
@@ -226,11 +226,11 @@ graph TD
 
 To defend against advanced exploitation vectors (e.g., PHP web shell injections in EXIF/comments, polyglots, and malicious ICC profiles), `jpeg_meta_rs` provides an advanced sanitization option (`--sanitize <OUT_FILE>`):
 
-1.  **JPEG Metadata Sanitizer ([utils/src/sanitize.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/sanitize.rs))**:
+1.  **JPEG Metadata Sanitizer ([utils/src/sanitize.rs](file:///home/emhcet/private/projects/desktop/compiled systems language/jpeg_meta_rs/utils/src/sanitize.rs))**:
     *   Iterates through all JPEG segments.
     *   Explicitly **retains** only the essential structural segments: `SOI`, `APP0` (for decoder compatibility), `DQT`, `DHT`, `SOF0`/`SOF2`, `SOS` (image data scan), and `EOI`.
     *   Completely **drops** all other segments, including all comment `COM` (`0xFFFE`) and metadata `APP1`..`APP15` (`0xFFE1`..`0xFFEF`) segments.
-2.  **PNG Ancillary Chunk Sanitizer ([utils/src/sanitize.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/sanitize.rs))**:
+2.  **PNG Ancillary Chunk Sanitizer ([utils/src/sanitize.rs](file:///home/emhcet/private/projects/desktop/compiled systems language/jpeg_meta_rs/utils/src/sanitize.rs))**:
     *   Walks the PNG chunk sequence.
     *   Explicitly **retains** only the critical chunks required to render the image canvas: `IHDR`, `PLTE`, `IDAT`, and `IEND`.
     *   Completely **drops** all ancillary, private, or metadata chunks: `tEXt`, `zTXt`, `iTXt`, `tIME`, `pHYs`, `iCCP` (color profile), `eXIf`, and all non-standard chunks.
@@ -258,7 +258,7 @@ graph TD
 
 ## 📊 11. Shannon Entropy Analysis
 
-To detect hidden encrypted or compressed payloads that might be obfuscated inside image data or overlays, `jpeg_meta_rs` computes the **Shannon Entropy** ([utils/src/entropy.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/entropy.rs)) of the entire raw byte stream:
+To detect hidden encrypted or compressed payloads that might be obfuscated inside image data or overlays, `jpeg_meta_rs` computes the **Shannon Entropy** ([utils/src/entropy.rs](file:///home/emhcet/private/projects/desktop/compiled systems language/jpeg_meta_rs/utils/src/entropy.rs)) of the entire raw byte stream:
 $$\text{Entropy} = -\sum_{i=0}^{255} P(x_i) \log_2 P(x_i)$$
 *   **0.0**: Completely uniform/predictable data (e.g., all zero bytes).
 *   **~8.0**: Max randomness, indicating high compression or encryption (typical for compressed image streams, but an unusually high entropy on uncompressed formats or appended sections flags potential steganography/crypt-payloads).

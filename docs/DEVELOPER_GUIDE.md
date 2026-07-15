@@ -9,10 +9,10 @@ This guide outlines setup instructions, testing frameworks, and coding standards
 Compile the project workspace using:
 
 ```bash
-cargo build --release
+./build.sh
 ```
 
-This compiles an optimized release binary located at `target/release/jpeg_meta_rs`.
+This compiles an optimized release binary located at `./analyzer`.
 
 ---
 
@@ -23,7 +23,7 @@ We utilize a comprehensive TDD harness covering format converters, parsing anoma
 ### Running Tests
 Execute the test runner script:
 ```bash
-cargo test
+./test.sh
 ```
 
 ---
@@ -47,14 +47,14 @@ These files are ignored by git in `.gitignore` to prevent leaking personal PII m
 ### Adding support for new JPEG APP markers
 Update `parse_jpeg` in `src/jpeg.rs`:
 1. Add a case in the `marker` match block:
-   ```rust
+   ```compiled systems language
    0xE3 => "APP3 (Custom Application)".to_string(),
    ```
 
 ### Adding support for new PNG chunks
 Update `parse_png` in `src/png.rs`:
 1. Add a case to the chunk type match block:
-   ```rust
+   ```compiled systems language
    "gAMA" => {
        // Parse image gamma
    }
