@@ -70,25 +70,25 @@ The JPEG engine (`src/jpeg.rs`) parses the JPEG binary layout sequentially. It l
 
 ```mermaid
 flowchart TD
-    Start([🚀 Start JPEG Scan]) --> CheckSOI{SOI Header 0xFFD8?}
+    Start([🚀 Start JPEG Scan]) --> CheckSOI{"SOI Header 0xFFD8?"}
     CheckSOI -- No --> Err[InvalidFormat Error]
-    CheckSOI -- Yes --> FindMarker{Read 0xFFxx Marker}
+    CheckSOI -- Yes --> FindMarker{"Read 0xFFxx Marker"}
     
-    FindMarker --> EOI{0xFFD9 EOI?}
+    FindMarker --> EOI{"0xFFD9 EOI?"}
     EOI -- Yes --> SaveSegment[Save EOI Segment] --> End([🏁 End Scan])
     
-    EOI -- No --> SOS{0xFFDA SOS?}
+    EOI -- No --> SOS{"0xFFDA SOS?"}
     SOS -- Yes --> SaveSOS[Save SOS Segment] --> End
     
     SOS -- No --> ReadLen[Read 2-Byte Segment Length]
     ReadLen --> SaveSeg[Save Segment Metadata]
     
-    SaveSeg --> IsAPP1{Is APP1 EXIF?}
-    IsAPP1 -- Yes --> ExtractExif[Extract Raw EXIF Bytes]
-    IsAPP1 -- No --> IsXMP{Is APP1 XMP?}
+    SaveSeg --> IsAPP1{"Is APP1 EXIF?"}
+    IsAPP1 -- Yes --> ExtractExif["Extract Raw EXIF Bytes"]
+    IsAPP1 -- No --> IsXMP{"Is APP1 XMP?"}
     
     IsXMP -- Yes --> ExtractXMP[Extract Raw XML String]
-    IsXMP -- No --> IsSOF{Is SOF0/SOF2?}
+    IsXMP -- No --> IsSOF{"Is SOF0/SOF2?"}
     
     IsSOF -- Yes --> ParseDim[Parse Width, Height & Precision]
     IsSOF -- No --> Skip[Skip Segment Payload]
@@ -107,25 +107,25 @@ The PNG engine (`src/png.rs`) processes chunks according to the W3C PNG specific
 
 ```mermaid
 flowchart TD
-    Start([🚀 Start PNG Scan]) --> CheckSig{PNG Signature?}
+    Start([🚀 Start PNG Scan]) --> CheckSig{"PNG Signature?"}
     CheckSig -- No --> Err[InvalidFormat Error]
     CheckSig -- Yes --> ReadChunk{Read Length & Type}
     
-    ReadChunk --> IsIEND{IEND Chunk?}
+    ReadChunk --> IsIEND{"IEND Chunk?"}
     IsIEND -- Yes --> End([🏁 End Scan])
     
-    IsIEND -- No --> VerifyCRC[Compute & Verify CRC32]
+    IsIEND -- No --> VerifyCRC["Compute & Verify CRC32"]
     VerifyCRC --> Route{Match Chunk Type}
     
-    Route -- IHDR --> ParseIHDR[Parse Dimensions & Color Type]
-    Route -- tEXt/iTXt --> ParseText[Parse Key-Value Metadata & XMP]
-    Route -- tIME --> ParseTime[Parse Modification Time]
-    Route -- pHYs --> ParsePhys[Parse Pixel Aspect Resolution]
-    Route -- eXIf --> ExtractExif[Extract Raw EXIF Bytes]
-    Route -- sBIT/bKGD/oFFs/sCAL --> ParseAncillary[Parse Chunk Specific Properties]
-    Route -- Other --> Skip[Skip Payload]
+    Route -- IHDR --> ParseIHDR["Parse Dimensions & Color Type"]
+    Route -- tEXt/iTXt --> ParseText["Parse Key-Value Metadata & XMP"]
+    Route -- tIME --> ParseTime["Parse Modification Time"]
+    Route -- pHYs --> ParsePhys["Parse Pixel Aspect Resolution"]
+    Route -- eXIf --> ExtractExif["Extract Raw EXIF Bytes"]
+    Route -- sBIT/bKGD/oFFs/sCAL --> ParseAncillary["Parse Chunk Specific Properties"]
+    Route -- Other --> Skip["Skip Payload"]
     
-    ParseIHDR --> Next[Read Next Chunk]
+    ParseIHDR --> Next["Read Next Chunk"]
     ParseText --> Next
     ParseTime --> Next
     ParsePhys --> Next
@@ -174,23 +174,23 @@ To inspect files for hidden, appended, or malicious payloads (steganography / ov
 
 ```mermaid
 graph TD
-    Start([🚀 Start Scanner]) --> LoadBytes[Load File Bytes]
-    LoadBytes --> GetEOF[Fetch Parser's Scanned EOF Offset]
+    Start([🚀 Start Scanner]) --> LoadBytes["Load File Bytes"]
+    LoadBytes --> GetEOF["Fetch Parser's Scanned EOF Offset"]
     
     subgraph OverlayCheck [Overlay Detection]
-        GetEOF --> CompareLen{File Size > Scanned EOF?}
-        CompareLen -- Yes --> CreateOverlay[Report Trailing Data Payload]
-        CompareLen -- No --> SigScan[Signature Walk]
+        GetEOF --> CompareLen{"File Size > Scanned EOF?"}
+        CompareLen -- Yes --> CreateOverlay["Report Trailing Data Payload"]
+        CompareLen -- No --> SigScan["Signature Walk"]
     end
     
     subgraph PatternWalk [Signature Magic Matching]
         CreateOverlay --> SigScan
-        SigScan --> InitOffset[Start Search at Offset 12]
-        InitOffset --> WindowMatch{Match Magic Signature?}
-        WindowMatch -- ZIP/ELF/PE/PDF/PHP/Script --> CreatePayload[Report Hidden Payload]
-        WindowMatch -- None --> NextByte[Increment Scan Offset]
+        SigScan --> InitOffset["Start Search at Offset 12"]
+        InitOffset --> WindowMatch{"Match Magic Signature?"}
+        WindowMatch -- ZIP/ELF/PE/PDF/PHP/Script --> CreatePayload["Report Hidden Payload"]
+        WindowMatch -- None --> NextByte["Increment Scan Offset"]
         CreatePayload --> NextByte
-        NextByte --> Done{EndOfFile?}
+        NextByte --> Done{"EndOfFile?"}
         Done -- No --> WindowMatch
         Done -- Yes --> End([🏁 Done])
     end
@@ -208,14 +208,14 @@ The copier engine inside [utils/src/copy.rs](file:///home/emhcet/private/project
 
 ```mermaid
 graph TD
-    Start([🚀 Start Scrubbing]) --> ReadFile[Read Source Bytes]
-    ReadFile --> GetOffset[Fetch official_end_offset]
-    GetOffset --> Compare{official_end_offset < Total Size?}
+    Start([🚀 Start Scrubbing]) --> ReadFile["Read Source Bytes"]
+    ReadFile --> GetOffset["Fetch official_end_offset"]
+    GetOffset --> Compare{"official_end_offset < Total Size?"}
     
-    Compare -- Yes --> Slice[Slice Bytes 0..official_end_offset]
-    Compare -- No --> KeepAll[Keep Original Bytes]
+    Compare -- Yes --> Slice["Slice Bytes 0..official_end_offset"]
+    Compare -- No --> KeepAll["Keep Original Bytes"]
     
-    Slice --> WriteFile[Write to Destination]
+    Slice --> WriteFile["Write to Destination"]
     KeepAll --> WriteFile
     WriteFile --> End([🏁 Sanitized Copy Created])
 ```
@@ -237,23 +237,23 @@ To defend against advanced exploitation vectors (e.g., PHP web shell injections 
 
 ```mermaid
 graph TD
-    Start([🚀 Start Sanitization]) --> Read[Read Image Stream]
-    Read --> Detect[Detect format type]
+    Start([🚀 Start Sanitization]) --> Read["Read Image Stream"]
+    Read --> Detect["Detect format type"]
     
-    Detect -- JPEG -- AppSegmentCheck{Segment is APP1..APP15 or COM?}
-    AppSegmentCheck -- Yes --> DropSeg[Discard Segment]
-    AppSegmentCheck -- No --> CopySeg[Copy Segment to Clean Output]
+    Detect -- JPEG -- AppSegmentCheck{"Segment is APP1..APP15 or COM?"}
+    AppSegmentCheck -- Yes --> DropSeg["Discard Segment"]
+    AppSegmentCheck -- No --> CopySeg["Copy Segment to Clean Output"]
     
-    Detect -- PNG -- ChunkCheck{Chunk is Critical: IHDR/PLTE/IDAT/IEND?}
-    ChunkCheck -- Yes --> CopyChunk[Copy Chunk to Clean Output]
-    ChunkCheck -- No --> DropChunk[Discard Chunk]
+    Detect -- PNG -- ChunkCheck{"Chunk is Critical: IHDR/PLTE/IDAT/IEND?"}
+    ChunkCheck -- Yes --> CopyChunk["Copy Chunk to Clean Output"]
+    ChunkCheck -- No --> DropChunk["Discard Chunk"]
     
-    DropSeg --> NextSeg[Process Next Segment/Chunk]
+    DropSeg --> NextSeg["Process Next Segment/Chunk"]
     CopySeg --> NextSeg
     DropChunk --> NextSeg
     CopyChunk --> NextSeg
     
-    NextSeg --> Write[Write Sanitized Output to Disk]
+    NextSeg --> Write["Write Sanitized Output to Disk"]
 ```
 
 ## 📊 11. Shannon Entropy Analysis
