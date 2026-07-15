@@ -29,6 +29,7 @@ The `jpeg_meta_rs` CLI provides a flexible, high-contrast, multi-file analyzer f
 | `--filter-keys` | `-k` | Filter specific metadata fields to print. | Comma-separated list (e.g., `gps,iso,make`) |
 | `--raw-sizes` | N/A | Display sizes in raw bytes instead of human-readable formats. | N/A |
 | `--exclude-embedded` | N/A | Hide the embedded payloads scanner table. | N/A |
+| `--list-editable` | N/A | List all editable/deletable metadata fields in the file with copy-pasteable example edit commands. | N/A |
 | `--set-comment` | N/A | Set or update the image comment (JPEG COM segment or PNG 'Comment' text chunk). | String comment value |
 | `--set-text` | N/A | Set or update custom PNG text metadata key-value pair. | `KEYWORD:VALUE` |
 | `--delete-text` | N/A | Delete a PNG text metadata keyword or the JPEG comment. | Keyword to delete |
@@ -68,15 +69,35 @@ Outputs a single JSON dictionary mapping file paths to their extracted analysis:
 ```
 
 ### ✏️ Metadata Editing & Creation
-Add, modify, or delete comments and text metadata keywords for JPEG and PNG:
+Add, modify, or delete comments and text metadata keywords for JPEG and PNG.
+
+#### 💡 Discovering Editable Fields (Non-Technical User Helper)
+If you do not know which metadata fields exist in an image file, use the `--list-editable` flag. It lists all editable tags and prints copy-pasteable command examples customized for your file:
 ```bash
-# Set a comment for JPEG or PNG
-./analyzer --set-comment "Copyright 2026 Walkers" -o edited.jpg original.jpg
-
-# Set a custom keyword text tag in PNG
-./analyzer --set-text "Author:Rick Walker" -o edited.png original.png
-
-# Delete a metadata tag
-./analyzer --delete-text Author -o deleted.png edited.png
+./analyzer --list-editable original.png
 ```
+*Expected Console Output:*
+```text
+ℹ️ Editable metadata fields in 'original.png':
+  - 'Author' (currently: "Rick Walker")
+
+✏️ Example commands to edit:
+  • To set/create a tag:     ./analyzer --set-text "Author:John Doe" original.png
+  • To set general comment:   ./analyzer --set-comment "My Comment" original.png
+  • To delete a tag:         ./analyzer --delete-text Author original.png
+```
+
+#### 🛡️ Auto-Copy Logic Sugar (OOM / Safety Resolution)
+To protect original files from accidental modifications, if you execute an edit command **without** specifying an output destination `-o / --out`, the program automatically writes to a copy (appending `_edited` to the name) in the same directory:
+```bash
+./analyzer --set-comment "Copyright 2026 Walkers" original.jpg
+# Automatically saves to: original_edited.jpg
+```
+If the edited target filename already exists, the engine's built-in collision handler automatically resolves the conflict (e.g. saving to `original_edited_copy_1.jpg`) to avoid overwriting existing work.
+
+If you explicitly wish to write to a custom filename, specify `-o / --out`:
+```bash
+./analyzer --set-text "Author:Rick Walker" -o output.png original.png
+```
+
 

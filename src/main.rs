@@ -97,6 +97,10 @@ struct Args {
     /// Output file path for edited or sanitized image
     #[arg(long, short = 'o', value_name = "OUT_FILE")]
     out: Option<PathBuf>,
+
+    /// List all editable/deletable metadata fields in the file with example edit commands
+    #[arg(long)]
+    list_editable: bool,
 }
 
 #[derive(serde::Serialize)]
@@ -170,6 +174,56 @@ fn main() -> Result<(), String> {
                 }
             }
         };
+        if args.list_editable {
+            match resolved_type {
+                FileType::Jpeg => {
+                    match parse_jpeg(&bytes) {
+                        Ok(info) => {
+                            println!("ℹ️ Editable metadata fields in '{}':", path.display());
+                            if let Some(ref comment) = info.comment {
+                                println!("  - 'Comment' (currently: \"{}\")", comment);
+                            } else {
+                                println!("  - 'Comment' (currently empty)");
+                            }
+                            println!("\n✏️ Example commands to edit:");
+                            println!("  • To edit/create comment:  ./analyzer --set-comment \"My Comment\" {}", path.display());
+                            println!("  • To delete comment:       ./analyzer --delete-text Comment {}", path.display());
+                            println!();
+                        }
+                        Err(e) => {
+                            errors.push(format!("Failed to parse JPEG '{}': {e}", path.display()));
+                        }
+                    }
+                }
+                FileType::Png => {
+                    match parse_png(&bytes) {
+                        Ok(info) => {
+                            println!("ℹ️ Editable metadata fields in '{}':", path.display());
+                            if info.text_metadata.is_empty() {
+                                println!("  - No existing custom text tags. You can add new ones!");
+                            } else {
+                                for (k, v) in &info.text_metadata {
+                                    println!("  - '{}' (currently: \"{}\")", k, v);
+                                }
+                            }
+                            println!("\n✏️ Example commands to edit:");
+                            println!("  • To set/create a tag:     ./analyzer --set-text \"Author:John Doe\" {}", path.display());
+                            println!("  • To set general comment:   ./analyzer --set-comment \"My Comment\" {}", path.display());
+                            println!("  • To delete a tag:         ./analyzer --delete-text Author {}", path.display());
+                            println!();
+                        }
+                        Err(e) => {
+                            errors.push(format!("Failed to parse PNG '{}': {e}", path.display()));
+                        }
+                    }
+                }
+                _ => {
+                    println!("ℹ️ Metadata editing is currently only supported for JPEG and PNG formats. File '{}' is {:?}", path.display(), resolved_type);
+                }
+            }
+            continue;
+        }
+
         let mut modified_bytes = bytes.clone();
         let mut has_edits = false;
 
@@ -273,25 +327,37 @@ fn main() -> Result<(), String> {
         }
 
         if has_edits {
-            if let Some(ref out_path) = args.out {
-                let resolved_dest = jpeg_meta_utils::copy::resolve_destination_path(path, out_path);
-                if let Some(parent) = resolved_dest.parent().filter(|p| !p.as_os_str().is_empty()) {
-                    if let Err(e) = fs::create_dir_all(parent) {
-                        errors.push(format!("Failed to create parent directory for '{}': {e}", resolved_dest.display()));
-                        continue;
-                    }
-                }
-                if let Err(e) = fs::write(&resolved_dest, &modified_bytes) {
-                    errors.push(format!("Failed to write edited file to '{}': {e}", resolved_dest.display()));
-                } else {
-                    println!(
-                        "Successfully edited '{}' and saved to '{}'.",
-                        path.display(),
-                        resolved_dest.display()
-                    );
-                }
+            let target_path = if let Some(ref out_path) = args.out {
+                jpeg_meta_utils::copy::resolve_destination_path(path, out_path)
             } else {
-                errors.push("Writing edits requires specifying an output destination path via --out (-o).".to_string());
+                let default_out_path = if let Some(ext) = path.extension() {
+                    let mut stem = path.file_stem().unwrap().to_os_string();
+                    stem.push("_edited.");
+                    stem.push(ext);
+                    path.with_file_name(stem)
+                } else {
+                    let mut stem = path.file_name().unwrap().to_os_string();
+                    stem.push("_edited");
+                    path.with_file_name(stem)
+                };
+                jpeg_meta_utils::copy::resolve_destination_path(path, &default_out_path)
+            };
+
+            if let Some(parent) = target_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                if let Err(e) = fs::create_dir_all(parent) {
+                    errors.push(format!("Failed to create parent directory for '{}': {e}", target_path.display()));
+                    continue;
+                }
+            }
+
+            if let Err(e) = fs::write(&target_path, &modified_bytes) {
+                errors.push(format!("Failed to write edited file to '{}': {e}", target_path.display()));
+            } else {
+                println!(
+                    "Successfully edited '{}' and saved to '{}'.",
+                    path.display(),
+                    target_path.display()
+                );
             }
             continue;
         }
