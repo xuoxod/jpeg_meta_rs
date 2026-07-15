@@ -74,6 +74,10 @@ struct Args {
     #[arg(long)]
     exclude_embedded: bool,
 
+    /// Display sizes in raw bytes instead of human-readable formats
+    #[arg(long)]
+    raw_sizes: bool,
+
     /// Sanitize (strip all metadata/comments/ancillary chunks) and save image to target file
     #[arg(long, value_name = "OUT_FILE")]
     sanitize: Option<PathBuf>,
@@ -314,7 +318,7 @@ fn main() -> Result<(), String> {
 
             // Print embedded payloads table if not excluded
             if !args.exclude_embedded {
-                print_embedded_table(&analysis.embedded, &filter_list);
+                print_embedded_table(&analysis.embedded, args.raw_sizes, &filter_list);
             }
         }
     }
@@ -352,11 +356,16 @@ fn print_jpeg_tables(path: &Path, info: &JpegInfo, entropy: f64, args: &Args, fi
             ]);
 
         for seg in &info.segments {
+            let len_str = if args.raw_sizes {
+                seg.length.to_string()
+            } else {
+                jpeg_meta_utils::size::format_size(seg.length as u64)
+            };
             seg_table.add_row(vec![
                 format!("0x{:08X}", seg.offset),
                 format!("0xFF{:02X}", seg.marker),
                 seg.name.clone(),
-                seg.length.to_string(),
+                len_str,
             ]);
         }
         println!("📂 JPEG Segment Structure map:");
@@ -446,10 +455,15 @@ fn print_png_tables(path: &Path, info: &PngInfo, entropy: f64, args: &Args, filt
             } else {
                 Cell::new("CORRUPT").fg(Color::Red).add_attribute(Attribute::Bold)
             };
+            let len_str = if args.raw_sizes {
+                (chunk.length - 12).to_string()
+            } else {
+                jpeg_meta_utils::size::format_size((chunk.length - 12) as u64)
+            };
             chunk_table.add_row(vec![
                 Cell::new(format!("0x{:08X}", chunk.offset)),
                 Cell::new(chunk.type_name.clone()),
-                Cell::new((chunk.length - 12).to_string()),
+                Cell::new(len_str),
                 Cell::new(format!("0x{:08X}", chunk.crc)),
                 crc_status,
             ]);
@@ -701,10 +715,15 @@ fn print_webp_tables(path: &Path, info: &WebpInfo, entropy: f64, args: &Args, fi
             ]);
 
         for chunk in &info.chunks {
+            let len_str = if args.raw_sizes {
+                chunk.length.to_string()
+            } else {
+                jpeg_meta_utils::size::format_size(chunk.length as u64)
+            };
             chunk_table.add_row(vec![
                 chunk.tag.clone(),
                 format!("0x{:08X}", chunk.offset),
-                chunk.length.to_string(),
+                len_str,
             ]);
         }
         println!("📂 WebP Chunk Structure map:");
@@ -778,10 +797,15 @@ fn print_gif_tables(path: &Path, info: &GifInfo, entropy: f64, args: &Args, filt
             ]);
 
         for block in &info.blocks {
+            let len_str = if args.raw_sizes {
+                block.length.to_string()
+            } else {
+                jpeg_meta_utils::size::format_size(block.length as u64)
+            };
             block_table.add_row(vec![
                 block.block_type.clone(),
                 format!("0x{:08X}", block.offset),
-                block.length.to_string(),
+                len_str,
             ]);
         }
         println!("📂 GIF Block Structure map:");
@@ -852,10 +876,15 @@ fn print_heic_tables(path: &Path, info: &HeicInfo, entropy: f64, args: &Args, fi
             ]);
 
         for bbox in &info.boxes {
+            let len_str = if args.raw_sizes {
+                bbox.length.to_string()
+            } else {
+                jpeg_meta_utils::size::format_size(bbox.length as u64)
+            };
             box_table.add_row(vec![
                 bbox.box_type.clone(),
                 format!("0x{:08X}", bbox.offset),
-                bbox.length.to_string(),
+                len_str,
             ]);
         }
         println!("📂 HEIC ISOBMFF Box Structure map:");
@@ -900,7 +929,7 @@ fn print_heic_tables(path: &Path, info: &HeicInfo, entropy: f64, args: &Args, fi
     }
 }
 
-fn print_embedded_table(payloads: &[jpeg_meta_utils::embedded::EmbeddedPayload], filter: &Option<Vec<String>>) {
+fn print_embedded_table(payloads: &[jpeg_meta_utils::embedded::EmbeddedPayload], raw_sizes: bool, filter: &Option<Vec<String>>) {
     if payloads.is_empty() {
         return;
     }
@@ -921,7 +950,11 @@ fn print_embedded_table(payloads: &[jpeg_meta_utils::embedded::EmbeddedPayload],
     for payload in payloads {
         if matches_filter(&payload.name, filter) || matches_filter(&payload.category, filter) {
             let len_str = if payload.length > 0 {
-                payload.length.to_string()
+                if raw_sizes {
+                    payload.length.to_string()
+                } else {
+                    jpeg_meta_utils::size::format_size(payload.length as u64)
+                }
             } else {
                 "Unknown / Variable".to_string()
             };
