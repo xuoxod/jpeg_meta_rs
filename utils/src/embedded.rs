@@ -99,12 +99,17 @@ fn format_preview(data: &[u8]) -> String {
     if data.is_empty() {
         return String::new();
     }
-    let is_ascii = data.iter().all(|&b| (b.is_ascii_graphic() || b == b' ') && b != b'\r' && b != b'\n');
-    if is_ascii {
-        String::from_utf8_lossy(data).to_string()
-    } else {
-        data.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ")
-    }
+    let hex = data.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ");
+    let ascii = data.iter()
+        .map(|&b| {
+            if (b.is_ascii_graphic() || b == b' ') && b != b'\r' && b != b'\n' {
+                b as char
+            } else {
+                '.'
+            }
+        })
+        .collect::<String>();
+    format!("{} | {}", hex, ascii)
 }
 
 #[cfg(test)]
