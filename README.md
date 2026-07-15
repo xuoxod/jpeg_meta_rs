@@ -4,21 +4,21 @@ An enterprise-grade, zero-dependency, ultra-fast compiled systems language foren
 
 ```mermaid
 graph TD
-    Image[📸 JPEG / PNG / WebP / GIF / HEIC] --> Check[🛡️ Input Guard: validate_file_path]
-    Check -- Size Limit Check < 200MB --> Scan[🔍 Binary Container Walk]
-    Check -- Exceeds Limit --> OOMError[⚠️ FileTooLarge Error]
+    Image["📸 JPEG / PNG / WebP / GIF / HEIC"] --> Check["🛡️ Input Guard: validate_file_path"]
+    Check -- Size Limit Check < 200MB --> Scan["🔍 Binary Container Walk"]
+    Check -- Exceeds Limit --> OOMError["⚠️ FileTooLarge Error"]
     
-    Scan --> ParseStruct[📂 Extract Segment/Box Map]
-    Scan --> CalcEntropy[📊 Calculate Shannon Entropy]
-    Scan --> Forensics{Embedded Payload Scanner}
+    Scan --> ParseStruct["📂 Extract Segment/Box Map"]
+    Scan --> CalcEntropy["📊 Calculate Shannon Entropy"]
+    Scan --> Forensics{"Embedded Payload Scanner"}
     
-    Forensics -- Overlay Detected --> Alert[⚠️ Trailing Data Warning]
-    Forensics -- PE/ELF/ZIP/PHP Signatures --> SigAlert[⚠️ Signature Alerts]
+    Forensics -- Overlay Detected --> Alert["⚠️ Trailing Data Warning"]
+    Forensics -- PE/ELF/ZIP/PHP Signatures --> SigAlert["⚠️ Signature Alerts"]
     
-    SigAlert -- Optional Scrubbing --> Scrub[🧹 copy_scrubbed_file]
-    Alert -- Optional Sanitization --> Sanitize[🧼 sanitize_jpeg_bytes / sanitize_png_bytes]
+    SigAlert -- Optional Scrubbing --> Scrub["🧹 copy_scrubbed_file"]
+    Alert -- Optional Sanitization --> Sanitize["🧼 sanitize_jpeg_bytes / sanitize_png_bytes"]
     
-    Scrub --> Output[🏁 Clean Output File]
+    Scrub --> Output["🏁 Clean Output File"]
     Sanitize --> Output
 ```
 

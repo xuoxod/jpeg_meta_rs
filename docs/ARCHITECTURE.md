@@ -12,29 +12,29 @@ The codebase is structured as a **Cargo Workspace** containing two distinct crat
 
 ```mermaid
 graph TD
-    subgraph Client [CLI Orchestrator]
-        Main[src/main.rs]
+    subgraph Client ["CLI Orchestrator"]
+        Main["src/main.rs"]
     end
 
-    subgraph Library [jpeg_meta_rs lib]
-        Main --> JpegEngine[src/jpeg.rs]
-        Main --> PngEngine[src/png.rs]
+    subgraph Library ["jpeg_meta_rs lib"]
+        Main --> JpegEngine["src/jpeg.rs"]
+        Main --> PngEngine["src/png.rs"]
         
-        JpegEngine --> Common[src/common.rs]
+        JpegEngine --> Common["src/common.rs"]
         PngEngine --> Common
         
-        JpegEngine --> ExifCrate[kamadak-exif]
+        JpegEngine --> ExifCrate["kamadak-exif"]
         PngEngine --> ExifCrate
     end
 
-    subgraph SubCrate [jpeg_meta_utils sub-crate]
-        Main --> PathVal[utils/src/path.rs]
-        Main --> FTVal[utils/src/file_type.rs]
-        Main --> ArgVal[utils/src/validation.rs]
-        Main --> ErrVal[utils/src/error.rs]
+    subgraph SubCrate ["jpeg_meta_utils sub-crate"]
+        Main --> PathVal["utils/src/path.rs"]
+        Main --> FTVal["utils/src/file_type.rs"]
+        Main --> ArgVal["utils/src/validation.rs"]
+        Main --> ErrVal["utils/src/error.rs"]
         
-        PngEngine --> CrcVal[utils/src/crc.rs]
-        Common --> GeoVal[utils/src/geo.rs]
+        PngEngine --> CrcVal["utils/src/crc.rs"]
+        Common --> GeoVal["utils/src/geo.rs"]
     end
 
     classDef bin fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;
