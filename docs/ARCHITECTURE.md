@@ -220,5 +220,46 @@ graph TD
     WriteFile --> End([🏁 Sanitized Copy Created])
 ```
 
+---
 
+## 🔒 10. Advanced Metadata Sanitization & Threat Mitigation Flow
 
+To defend against advanced exploitation vectors (e.g., PHP web shell injections in EXIF/comments, polyglots, and malicious ICC profiles), `jpeg_meta_rs` provides an advanced sanitization option (`--sanitize <OUT_FILE>`):
+
+1.  **JPEG Metadata Sanitizer ([utils/src/sanitize.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/sanitize.rs))**:
+    *   Iterates through all JPEG segments.
+    *   Explicitly **retains** only the essential structural segments: `SOI`, `APP0` (for decoder compatibility), `DQT`, `DHT`, `SOF0`/`SOF2`, `SOS` (image data scan), and `EOI`.
+    *   Completely **drops** all other segments, including all comment `COM` (`0xFFFE`) and metadata `APP1`..`APP15` (`0xFFE1`..`0xFFEF`) segments.
+2.  **PNG Ancillary Chunk Sanitizer ([utils/src/sanitize.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/sanitize.rs))**:
+    *   Walks the PNG chunk sequence.
+    *   Explicitly **retains** only the critical chunks required to render the image canvas: `IHDR`, `PLTE`, `IDAT`, and `IEND`.
+    *   Completely **drops** all ancillary, private, or metadata chunks: `tEXt`, `zTXt`, `iTXt`, `tIME`, `pHYs`, `iCCP` (color profile), `eXIf`, and all non-standard chunks.
+
+```mermaid
+graph TD
+    Start([🚀 Start Sanitization]) --> Read[Read Image Stream]
+    Read --> Detect[Detect format type]
+    
+    Detect -- JPEG -- AppSegmentCheck{Segment is APP1..APP15 or COM?}
+    AppSegmentCheck -- Yes --> DropSeg[Discard Segment]
+    AppSegmentCheck -- No --> CopySeg[Copy Segment to Clean Output]
+    
+    Detect -- PNG -- ChunkCheck{Chunk is Critical: IHDR/PLTE/IDAT/IEND?}
+    ChunkCheck -- Yes --> CopyChunk[Copy Chunk to Clean Output]
+    ChunkCheck -- No --> DropChunk[Discard Chunk]
+    
+    DropSeg --> NextSeg[Process Next Segment/Chunk]
+    CopySeg --> NextSeg
+    DropChunk --> NextSeg
+    CopyChunk --> NextSeg
+    
+    NextSeg --> Write[Write Sanitized Output to Disk]
+```
+
+## 📊 11. Shannon Entropy Analysis
+
+To detect hidden encrypted or compressed payloads that might be obfuscated inside image data or overlays, `jpeg_meta_rs` computes the **Shannon Entropy** ([utils/src/entropy.rs](file:///home/emhcet/private/projects/desktop/rust/jpeg_meta_rs/utils/src/entropy.rs)) of the entire raw byte stream:
+$$\text{Entropy} = -\sum_{i=0}^{255} P(x_i) \log_2 P(x_i)$$
+*   **0.0**: Completely uniform/predictable data (e.g., all zero bytes).
+*   **~8.0**: Max randomness, indicating high compression or encryption (typical for compressed image streams, but an unusually high entropy on uncompressed formats or appended sections flags potential steganography/crypt-payloads).
+*   The computed value is printed in the primary **Image properties** table under **Shannon Entropy**.
