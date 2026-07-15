@@ -12,21 +12,9 @@ All commands in the user manuals have been obfuscated to prevent search engines 
 ./analyzer [FLAGS] [OPTIONS] <FILES>...
 ```
 
-### 📥 Core Option Matrix
+### 📥 Option Parameters Reference
 
-| Parameter / Flag | Short | Description | Allowed Values |
-|---|---|---|---|
-| `--format` | `-f` | Formats output presentation. | `table` (Default), `json` |
-| `--file-type` | `-t` | Forces parsing the file as a specific format. | `auto` (Default), `jpeg`, `png`, `webp`, `gif`, `heic` |
-| `--filter-keys` | `-k` | Limits metadata rendering to matching keys. | Comma-separated list (e.g., `gps,make,model`) |
-| `--exclude-structure`| N/A | Excludes the structural chunk/segment mapping table. | N/A |
-| `--exclude-properties`| N/A | Excludes basic width/height/color properties. | N/A |
-| `--exclude-exif` | N/A | Excludes decoded EXIF metadata table. | N/A |
-| `--exclude-xmp` | N/A | Excludes raw XMP XML blocks. | N/A |
-| `--exclude-text` | N/A | Excludes PNG text metadata (PNG only). | N/A |
-| `--exclude-embedded` | N/A | Excludes forensic payload signature scans. | N/A |
-| `--raw-sizes` | N/A | Displays file and segment sizes in raw bytes instead of human-readable formats. | N/A |
-| `--sanitize` | N/A | Strips all comments, EXIF, and private blocks. | Path to output sanitized file |
+For a complete description of all available commands, options, and flags (such as `--raw-sizes`, `--exclude-structure`, and output formatting details), see the **[CLI Parameters Option Matrix](CLI_REFERENCE.md#%EF%B8%8F-2-option-matrix)** in the Command-Line Reference guide.
 
 ---
 
