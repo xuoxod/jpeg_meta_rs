@@ -6,3 +6,5 @@ pub mod path;
 pub mod validation;
 pub mod embedded;
 pub mod copy;
+pub mod sanitize;
+pub mod entropy;

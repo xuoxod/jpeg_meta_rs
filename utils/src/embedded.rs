@@ -20,6 +20,9 @@ const PATTERNS: &[SignaturePattern] = &[
     SignaturePattern { magic: &[0x25, 0x50, 0x44, 0x46], name: "PDF Document", category: "Document" },
     SignaturePattern { magic: &[0x3C, 0x3F, 0x70, 0x68, 0x70], name: "PHP Script Block", category: "Script" }, // "<?php"
     SignaturePattern { magic: &[0x3C, 0x73, 0x63, 0x72, 0x69, 0x70, 0x74], name: "JavaScript/HTML Script Block", category: "Script" }, // "<script"
+    SignaturePattern { magic: &[0x65, 0x76, 0x61, 0x6C, 0x28], name: "Suspicious Eval Function Call", category: "Script Injection" }, // "eval("
+    SignaturePattern { magic: &[0x73, 0x79, 0x73, 0x74, 0x65, 0x6D, 0x28], name: "Suspicious System Execution Call", category: "Script Injection" }, // "system("
+    SignaturePattern { magic: &[0x62, 0x61, 0x73, 0x65, 0x36, 0x34, 0x5F, 0x64, 0x65, 0x63, 0x6F, 0x64, 0x65, 0x28], name: "Suspicious Base64 Payload Decoder", category: "Script Injection" }, // "base64_decode("
     SignaturePattern { magic: &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A], name: "Embedded PNG Image", category: "Image" },
     SignaturePattern { magic: &[0xFF, 0xD8, 0xFF], name: "Embedded JPEG Image", category: "Image" },
 ];
@@ -143,5 +146,17 @@ mod tests {
         let payloads = scan_embedded_payloads(&bytes, bytes.len());
         assert_eq!(payloads.len(), 1);
         assert_eq!(payloads[0].name, "Windows Portable Executable (PE)");
+    }
+
+    #[test]
+    fn test_scan_embedded_script_injection() {
+        let mut bytes = b"GIF89a\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0".to_vec();
+        bytes.extend_from_slice(b"some prefix eval(base64_decode('payload'))");
+
+        let payloads = scan_embedded_payloads(&bytes, bytes.len());
+        // Should detect both eval( and base64_decode(
+        assert_eq!(payloads.len(), 2);
+        assert!(payloads.iter().any(|p| p.name == "Suspicious Eval Function Call"));
+        assert!(payloads.iter().any(|p| p.name == "Suspicious Base64 Payload Decoder"));
     }
 }
